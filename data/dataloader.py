@@ -10,7 +10,7 @@ from models.utils import eigen_decomp
 
 
 # generator of the data as suggested by Prof B
-def data_generator(batch_size, N_min=20, N_max=100, T_min=50, T_max=300):
+def data_generator(batch_size, N_min=20, N_max=300, T_min=50, T_max=300):
     while True:
         N = np.random.randint(N_min, N_max + 1)
         T = np.random.randint(T_min, T_max + 1)
