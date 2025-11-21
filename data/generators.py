@@ -1,7 +1,7 @@
 import numpy as np
 from scipy import stats
 from data.generators import make_monotone_pattern
-from data.regression_estimators import (
+from data.estimators import (
     fit_monotone_regressions,
     reconstruct_mu_sigma_from_phi,
 )
