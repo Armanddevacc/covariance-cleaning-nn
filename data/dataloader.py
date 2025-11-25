@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from scipy import stats
-from data.missing_patterns import make_monotone_pattern
+from data.missing_patterns import make_monotone_pattern, make_random_pattern_vecto
 from data.estimators import (
     fit_monotone_regressions,
     reconstruct_mu_sigma_from_phi,
@@ -13,13 +13,10 @@ from data.estimators import torch_cov_pairwise
 # generator of the data as suggested by Prof B
 def data_generator(batch_size, N_min=20, N_max=300, T_min=50, T_max=300):
     while True:
-        lam_emp = []
-        Q_emp = []
-
         N = np.random.randint(N_min, N_max + 1)
         T = np.random.randint(T_min, T_max + 1)
 
-        # sample true covariance
+        # --------------- use inverse wishart to sample true covariance ----------------
         df = np.random.uniform(2 * (N + 1), 10 * N, size=batch_size)
         # as suggested by prof B so that the population will not be the same and
         # so we don't have the neural network that will learn directly the target without looking at the input.
@@ -33,28 +30,15 @@ def data_generator(batch_size, N_min=20, N_max=300, T_min=50, T_max=300):
             )
         Sigma_true = torch.tensor(Sigma_true_np, dtype=torch.float32)
 
-        # Simulate T samples
+        # -------------------- Simulate T samples, vectorized ---------------------------
         Z = torch.randn(batch_size, T, N, dtype=torch.float32)
         L = torch.linalg.cholesky(Sigma_true)
-        R_torch = L @ Z.transpose(1, 2)
-
-        R = R_torch.cpu().numpy()
+        R = L @ Z.transpose(1, 2)  # will be distributed as N(0, Sigma_true)
 
         # Empirical covariance
-        R_hat_list = []
-        t_vec_list = []
-        mask_list = []
-        for i in range(batch_size):
-            R_hat_i, t_vec_i, mask_i = make_monotone_pattern(R[i])
-            R_hat_list.append(R_hat_i)
-            t_vec_list.append(t_vec_i)
-            mask_list.append(mask_i)
-
-        mask_np = np.stack(mask_list, axis=0)
-        mask = torch.tensor(mask_np, dtype=torch.bool)
-
-        R_hat_np = np.stack(R_hat_list, axis=0)
-        R_hat = torch.tensor(R_hat_np, dtype=torch.float32)
+        R_hat, t_vec, mask = make_random_pattern_vecto(
+            R
+        )  # (B, N, T), (B, N), (B, N, T)
 
         Sigma_hat = torch_cov_pairwise(
             R_hat
