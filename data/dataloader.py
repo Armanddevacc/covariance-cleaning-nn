@@ -117,20 +117,39 @@ def data_generator_2types(batch_size, N_min=20, N_max=300, T_min=50, T_max=300):
         R_hat_list = []
         t_vec_list = []
         mask_list = []
-        Sigmas_hat_1 = []
-
+        Sigmas_shaffer_list = []
         for i in range(batch_size):
             R_hat_i, t_vec_i, mask_i = make_monotone_pattern(R[i])
+            _, Sigma_shaffer = reconstruct_mu_sigma_from_phi(
+                fit_monotone_regressions(R_hat_i, t_vec_i)
+            )
             R_hat_list.append(R_hat_i)
             t_vec_list.append(t_vec_i)
             mask_list.append(mask_i)
+            Sigmas_shaffer_list.append(Sigma_shaffer)
 
+        # ------------------------------ additional shaffer estimator -----------------------------
+        Sigmas_shaffer_np = np.stack(Sigmas_shaffer_list, axis=0)
+        Sigmas_shaffer = torch.tensor(Sigmas_shaffer_np, dtype=torch.float32)
+
+        eigvals_shaffer, eigvecs_shaffer = torch.linalg.eigh(Sigmas_shaffer)
+
+        eigvals_desc_shaffer = torch.flip(eigvals_shaffer, dims=[1])  # (B, N)
+        eigvecs_desc_shaffer = torch.flip(eigvecs_shaffer, dims=[2])  # (B, N, N)
+
+        lam_emp_shaffer = eigvals_desc_shaffer.unsqueeze(-1).to(
+            torch.float32
+        )  # (B, N, 1)
+        Q_emp_shaffer = eigvecs_desc_shaffer.to(torch.float32)  # (B, N, N)
+
+        # -----------------------------------------------------------------------------------------
         mask_np = np.stack(mask_list, axis=0)
         mask = torch.tensor(mask_np, dtype=torch.bool)
 
         R_hat_np = np.stack(R_hat_list, axis=0)
         R_hat = torch.tensor(R_hat_np, dtype=torch.float32)
 
+        # --------- torch covariance with pairwise complete observations --------------------------
         Sigma_hat = torch_cov_pairwise(
             R_hat
         )  # takes a tensor (B, N, T) returns (B, N, N)
@@ -143,34 +162,11 @@ def data_generator_2types(batch_size, N_min=20, N_max=300, T_min=50, T_max=300):
         lam_emp = eigvals_desc.unsqueeze(-1).to(torch.float32)  # (B, N, 1)
         Q_emp = eigvecs_desc.to(torch.float32)  # (B, N, N)
 
-        # m_asset = mask.float().mean(dim=2)  # (B, N)
-
-        # effective coverage par direction
-        # v2 = Q_emp**2  # (B, N, N)
-        # alpha = (v2 * m_asset.unsqueeze(-1)).sum(dim=1)  # (B, N)
-
-        # last T observations with mask for each asset for each batch
+        # --------- Compute additional features ----------------------------------------------------
         Tmin = mask.float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
         Tmax = mask.flip(dims=[2]).float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
 
-        for i in range(batch_size):
-            R_hat_i, t_vec_i, _ = make_monotone_pattern(R[i])
-            _, Sigma_hat_1 = reconstruct_mu_sigma_from_phi(
-                fit_monotone_regressions(R_hat_i, t_vec_i)
-            )
-            Sigmas_hat_1.append(Sigma_hat_1)
-            R_hat_list.append(R_hat_i)
-            t_vec_list.append(t_vec_i)
+        Tmin_mean = Q_emp.transpose(1, 2) @ Tmin.float()
+        Tmax_mean = Q_emp.transpose(1, 2) @ Tmax.float()
 
-        Sigmas_hat_1 = np.stack(Sigmas_hat_1, axis=0)
-        Sigma_hat_1 = torch.tensor(Sigmas_hat_1, dtype=torch.float32)
-
-        eigvals_1, eigvecs_1 = torch.linalg.eigh(Sigma_hat_1)
-
-        eigvals_desc_1 = torch.flip(eigvals_1, dims=[1])  # (B, N)
-        eigvecs_desc_1 = torch.flip(eigvecs_1, dims=[2])  # (B, N, N)
-
-        lam_emp_1 = eigvals_desc_1.unsqueeze(-1).to(torch.float32)  # (B, N, 1)
-        Q_emp_1 = eigvecs_desc_1.to(torch.float32)  # (B, N, N)
-
-        yield lam_emp, Q_emp, Sigma_true, T, Tmin, Tmax, lam_emp_1, Q_emp_1
+        yield lam_emp, Q_emp, Sigma_true, T, Tmin_mean, Tmax_mean, lam_emp_shaffer, Q_emp_shaffer
