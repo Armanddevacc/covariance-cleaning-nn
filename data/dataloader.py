@@ -26,8 +26,12 @@ def data_generator(batch_size, N_min=20, N_max=300, T_min=50, T_max=300):
             Sigma_true_np[i] = stats.invwishart.rvs(
                 df=df[i], scale=np.eye(N)
             ) * (  # cannot be fully vectorized bc of invwishart
-                2 * (N + 1) - N - 1
+                df[i] - N - 1
             )
+            
+            diag = np.sqrt(Sigma_true_np[i].diagonal())
+            Sigma_true_np[i] /= np.outer(diag, diag)  # convert to correlation matrix
+            
         Sigma_true = torch.tensor(Sigma_true_np, dtype=torch.float32)
 
         # -------------------- Simulate T samples, vectorized ---------------------------
