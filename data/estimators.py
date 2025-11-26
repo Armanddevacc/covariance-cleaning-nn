@@ -57,7 +57,6 @@ def reconstruct_mu_sigma_from_phi(phi_list):
 
 
 # fully vectorized covariance with pairwise-complete observations like pandas.cov()
-# fully vectorized covariance with pairwise-complete observations like pandas.cov()
 def torch_cov_pairwise(X):
     """
     input X: (N, T) or (B, N, T)
