@@ -17,32 +17,20 @@ def data_generator(batch_size, N_min=20, N_max=300, T_min=50, T_max=300):
         T = np.random.randint(T_min, T_max + 1)
 
         # --------------- use inverse wishart to sample true covariance ----------------
-        df = np.random.uniform(2 * (N + 1), 10 * N, size=batch_size)
-        # as suggested by prof B so that the population will not be the same and
-        # so we don't have the neural network that will learn directly the target without looking at the input.
 
-        Sigma_true_np = np.zeros((batch_size, N, N))
-        for i in range(batch_size):
-            Sigma_true_np[i] = stats.invwishart.rvs(
-                df=df[i], scale=np.eye(N)
-            ) * (  # cannot be fully vectorized bc of invwishart
-                df[i] - N - 1
-            )
-            
-            diag = np.sqrt(Sigma_true_np[i].diagonal())
-            Sigma_true_np[i] /= np.outer(diag, diag)  # convert to correlation matrix
-            
-        Sigma_true = torch.tensor(Sigma_true_np, dtype=torch.float32)
+        df = 5 * (N + 1)
+        Sigma_true = torch.distributions.Wishart(
+            df=df, covariance_matrix=torch.eye(N)
+        ).sample((batch_size,))
+        # we don't center nor normalize since i think it is unnecessary here
 
         # -------------------- Simulate T samples, vectorized ---------------------------
-        Z = torch.randn(batch_size, T, N, dtype=torch.float32)
+        Z = torch.randn(batch_size, T, N)
         L = torch.linalg.cholesky(Sigma_true)
-        R = L @ Z.transpose(1, 2)  # will be distributed as N(0, Sigma_true)
+        R = L @ Z.transpose(1, 2)  # (B, N, T)
 
         # Empirical covariance
-        R_hat, t_vec, mask = make_random_pattern_vecto(
-            R
-        )  # (B, N, T), (B, N), (B, N, T)
+        R_hat, _, mask = make_random_pattern_vecto(R)  # (B, N, T), (B, N), (B, N, T)
 
         Sigma_hat = torch_cov_pairwise(
             R_hat
@@ -50,33 +38,20 @@ def data_generator(batch_size, N_min=20, N_max=300, T_min=50, T_max=300):
 
         eigvals, eigvecs = torch.linalg.eigh(Sigma_hat)
 
-        eigvals_desc = torch.flip(eigvals, dims=[1])  # (B, N)
-        eigvecs_desc = torch.flip(eigvecs, dims=[2])  # (B, N, N)
+        lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)  # (B, N)
+        Q_emp = torch.flip(eigvecs, dims=[2])  # (B, N, N)
 
-        lam_emp = eigvals_desc.unsqueeze(-1).to(torch.float32)  # (B, N, 1)
-        Q_emp = eigvecs_desc.to(torch.float32)  # (B, N, N)
-
-        # m_asset = mask.float().mean(dim=2)  # (B, N)
-
-        # effective coverage par direction
-        # v2 = Q_emp**2  # (B, N, N)
-        # alpha = (v2 * m_asset.unsqueeze(-1)).sum(dim=1)  # (B, N)
-
-        # last T observations with mask for each asset for each batch
         Tmin = mask.float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
         Tmax = mask.flip(dims=[2]).float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
 
-        Tmin_mean = Q_emp.transpose(1, 2) @ Tmin.float()
-        Tmax_mean = Q_emp.transpose(1, 2) @ Tmax.float()
+        Tmin_mean = Q_emp.transpose(1, 2).pow(2) @ Tmin.float()
+        Tmax_mean = Q_emp.transpose(1, 2).pow(2) @ Tmax.float()
 
         yield lam_emp, Q_emp, Sigma_true, T, Tmin_mean, Tmax_mean
 
 
 def data_generator_2types(batch_size, N_min=20, N_max=300, T_min=50, T_max=300):
     while True:
-        lam_emp = []
-        Q_emp = []
-
         N = np.random.randint(N_min, N_max + 1)
         T = np.random.randint(T_min, T_max + 1)
 
