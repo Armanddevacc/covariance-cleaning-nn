@@ -9,7 +9,7 @@ class BiGRUSpectralDenoiser(nn.Module):
         super().__init__()
 
         self.gru = nn.GRU(
-            input_size=4,  # The number of input features per sequence data, 1 here
+            input_size=6,  # The number of input features per sequence data, 1 here
             hidden_size=hidden_size,  # Tumber of features in the hidden state, one still one eigenvalue
             num_layers=1,  # amount of GRU we put one after-another
             bias=True,  # We always want bias

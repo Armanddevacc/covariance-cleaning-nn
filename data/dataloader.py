@@ -36,7 +36,9 @@ def data_generator(batch_size, N_min=20, N_max=300, T_min=50, T_max=300):
             R_hat
         )  # takes a tensor (B, N, T) returns (B, N, N)
 
-        eigvals, eigvecs = torch.linalg.eigh(Sigma_hat)
+        eigvals, eigvecs = torch.linalg.eigh(
+            Sigma_hat
+        )  # eigh because always symetric by construction
 
         lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)  # (B, N)
         Q_emp = torch.flip(eigvecs, dims=[2])  # (B, N, N)

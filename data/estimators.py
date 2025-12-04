@@ -64,8 +64,6 @@ def torch_cov_pairwise(X):
     if X.dim() == 2:
         X = X.unsqueeze(0)  # becomes (1, N, T)
 
-    B, N, T = X.shape
-
     # mask: 1 where valid, 0 where NaN
     mask = ~torch.isnan(X)  # (B, N, T)
 
