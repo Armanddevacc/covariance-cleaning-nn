@@ -19,8 +19,10 @@ def data_generator(batch_size, N_min=20, N_max=300, T_min=50, T_max=300, df_min_
 
         # --------------- use inverse wishart to sample true covariance ----------------
 
-        df = np.random.randint( df_min_factor * (N + 2), df_max_factor * N)  # degrees of freedom for invwishart
-        Sigma_true = st.invwishart.rvs(df=df, scale=np.eye(N), size=batch_size)*(df - N - 1)
+        df = np.random.randint( df_min_factor * (N + 2), df_max_factor * N, size=batch_size)  # degrees of freedom for invwishart
+        invwishart_sampler = np.vectorize(lambda x: st.invwishart.rvs(df=x, scale=np.eye(N))*(x-N-1), 
+                                       signature='()->(n,n)')
+        Sigma_true = invwishart_sampler(df)
         Sigma_true = torch.tensor(Sigma_true, dtype=torch.float32)
         # we don't center nor normalize since i think it is unnecessary here
 
