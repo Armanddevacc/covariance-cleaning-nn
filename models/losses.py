@@ -31,6 +31,7 @@ def loss_function(lam_pred, Q, Sigma_true, T):
     # Matrix difference
     Delta = Sigma_pred - Sigma_true  # (B, N, N)
 
+    ## CB: It seems more efficient to compute the Frobenius norm via squaring element-wise and summing.
     # Square of the matrix (Delta^2 = Delta @ Delta)
     Delta2 = Delta @ Delta  # (B, N, N)
 
