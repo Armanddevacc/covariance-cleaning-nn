@@ -167,8 +167,6 @@ def real_data_producer( historicalData: np.ndarray, available_stocks: np.ndarray
         else:
             sampler = WindowBitsetSampler(available_stocks, use_numba=True, warmup=True, seed=rng.integers(0, 2**31)).sample_chain_window 
             
-    NaN_mask = np.isnan(historicalData)
-    historicalData = np.where(NaN_mask, 0.0, historicalData)
 
     def data_generator():
         
@@ -207,10 +205,15 @@ def real_data_producer( historicalData: np.ndarray, available_stocks: np.ndarray
             time_indices_in = anchor_indices[:, None, None] + input_offsets
             time_indices_out = anchor_indices[:, None, None] + output_offsets.reshape(1, 1, -1)
 
-            returns_in = historicalData[time_indices_in, selected_stocks[..., None]]
-            nan_in = NaN_mask[time_indices_in, selected_stocks[..., None]]
+            # Returns In-sample
+            returns_in_raw = historicalData[time_indices_in, selected_stocks[..., None]]
+            nan_in = np.isnan(returns_in_raw)
+            returns_in = np.where(nan_in, 0.0, returns_in_raw)
             
-            returns_out = historicalData[time_indices_out, selected_stocks[..., None]]
+            # Returns Out-of-sample
+            returns_out_raw = historicalData[time_indices_out, selected_stocks[..., None]]
+            nan_out = np.isnan(returns_out_raw)
+            returns_out = np.where(nan_out, 0.0, returns_out_raw)
                 
             yield (returns_in, nan_in), returns_out
 
