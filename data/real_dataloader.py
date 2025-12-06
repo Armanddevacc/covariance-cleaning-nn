@@ -250,7 +250,7 @@ def real_data_pipeline( batch_size: int, date_bounds: Tuple[str, str], n_days_ou
         n_stocks (int, optional): Number of stocks to select.
         n_stocks_range (Tuple[int, int], optional): Range (min, max) for number of stocks to select.
         market_cap_range (Tuple[int, int], optional): Slice of stocks to select by Market Cap. Defaults to (0, 3000).
-        sequential (bool, optional): If True, selected timesteps in a batch will be sequential.
+        sequential (bool, optional): If True, selected timesteps in a batch will be sequential. It will try to preserve the stocks within the batch without selection bias.
         common_stocks (bool, optional): If True, uses a common stock sampler across timesteps. Warning: This will imply a selection bias.
         return_generator (bool, optional): If True, returns the generator function instead of a tf.data.Dataset.
         rng (np.random.Generator, optional): Random number generator instance. If None, a default generator is used.
