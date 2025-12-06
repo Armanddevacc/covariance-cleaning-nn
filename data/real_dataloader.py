@@ -184,7 +184,7 @@ def real_data_producer( historicalData: np.ndarray, available_stocks: np.ndarray
                 selected_timesteps = np.arange(batch_size) + rng.integers(0, n_timesteps - batch_size + 1) 
                 selected_stocks = sampler(start=selected_timesteps[0], k=batch_size, m=n_stocks_local)
             else:
-                # Random selection (per-row choice, fast enough and avoids large perms)
+                # Random selection
                 selected_timesteps = rng.integers(0, n_timesteps, size=batch_size)
                 selected_stocks = np.empty((batch_size, n_stocks_local), dtype=available_stocks.dtype)
                 for i, t in enumerate(selected_timesteps):
