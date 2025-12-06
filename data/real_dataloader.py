@@ -38,12 +38,14 @@ def prepare_dataset( date_bounds: Tuple[str, str], market_cap_range: Tuple[int, 
 
     bundle = joblib.load(filename,mmap_mode='r')
 
+    # Loading returns matrix
     returns = bundle.returns
     returns.index = pd.to_datetime(returns.index)
     returns_cols_numeric = pd.api.types.is_numeric_dtype(returns.columns)
     if hasattr(bundle, 'returns') and hasattr(bundle.returns, '_mmap'):
             bundle.returns._mmap.close()
-        
+    
+    # Loading available stocks matrix, it contains the stock identifiers available at each date
     available_stocks = bundle.available_stocks
     if hasattr(bundle, 'available_stocks') and hasattr(bundle.available_stocks, '_mmap'):
             bundle.available_stocks._mmap.close()
@@ -57,10 +59,11 @@ def prepare_dataset( date_bounds: Tuple[str, str], market_cap_range: Tuple[int, 
         returns.columns = returns.columns.astype(str)
         available_stocks = available_stocks.astype(str)
 
+    # Factorize to get unique stock identifiers
     codes, unique_stocks = pd.factorize(available_stocks.to_numpy().ravel())
     unique_stocks = pd.to_numeric(unique_stocks) if returns_cols_numeric else unique_stocks.astype(str)
 
-    # Rimappiamo i codici alla forma originale del DataFrame
+    # Remap the codes to the original DataFrame format
     available_stocks = pd.DataFrame(codes.reshape(available_stocks.shape),
                                     index=available_stocks.index,
                                     columns=available_stocks.columns)
@@ -68,7 +71,7 @@ def prepare_dataset( date_bounds: Tuple[str, str], market_cap_range: Tuple[int, 
     # Seleziona le colonne di returns in base ai nomi unici ottenuti
     returns = returns.loc[:, unique_stocks]
     available_stocks = available_stocks.loc[start_date:end_date]
-    available_stocks = available_stocks.iloc[:-n_days_out-shift] # rimuovi le ultime osservazioni non utilizzabili in-sample
+    available_stocks = available_stocks.iloc[:-n_days_out-shift]  # remove the last observations that cannot be used in-sample
 
     if returns.loc[start_date:available_stocks.index[0]].shape[0]>1:
         raise ValueError("The start date is earlier than the first available date in the available_stocks data: {}".format(available_stocks.index[0]))
@@ -82,6 +85,8 @@ def prepare_dataset( date_bounds: Tuple[str, str], market_cap_range: Tuple[int, 
 
     if first_valid_index - lookback < 0:
         raise ValueError("Requested lookback ({}) exceeds available data start.".format(lookback))
+    
+    # Determine the start date for returns considering the lookback
     start_cal = returns.index[first_valid_index - lookback]
     returns = np.ascontiguousarray(returns.loc[start_cal:end_date].to_numpy())
     available_stocks = np.ascontiguousarray(available_stocks.to_numpy())
