@@ -246,7 +246,7 @@ def real_data_pipeline( batch_size: int, date_bounds: Tuple[str, str], n_days_ou
         n_days_out (int): Number of days of future data to use as output.
         n_days_in (int, optional): Number of days of historical data to use as input.
         n_days_in_range (Tuple[int, int], optional): Range (min, max) for number of days to include in input data.
-        shift (int, optional): Number of days to shift the output data. Defaults to 1.
+        shift (int, optional): Number of days to shift the output data. Defaults to 1. This will cancel the lookahead bias.
         n_stocks (int, optional): Number of stocks to select.
         n_stocks_range (Tuple[int, int], optional): Range (min, max) for number of stocks to select.
         market_cap_range (Tuple[int, int], optional): Slice of stocks to select by Market Cap. Defaults to (0, 3000).
