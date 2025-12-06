@@ -20,11 +20,13 @@ def prepare_dataset( date_bounds: Tuple[str, str], market_cap_range: Tuple[int, 
     """
     Prepares the dataset for the given parameters.
     Parameters:
+    data_bounds (tuple): A tuple containing the start and end dates (d0, d1) for the out-of-sample window.
+    market_cap_range (tuple, optional): Slice of stocks to select by Market Cap. Defaults to (0, 3000).
+    n_days_out (int, optional): Output window. Defaults to 5.
+    shift (int, optional): Shift to avoid lookahead bias. Defaults to 1.
+    filename (str, optional): Path to the joblib file containing the dataset. Defaults to DATA.
     n_days_in (int, optional): Input window.
     n_days_in_range (tuple, optional): Range of possible input windows.
-    date_bounds (tuple): A tuple containing the start and end dates (d0, d1) for the data selection.
-    market_cap_range (tuple, optional): Slice of stocks to select by Market Cap. Defaults to (0, 3000).
-    filename (str, optional): Path to the joblib file containing the dataset. Defaults to DATA.
     Returns:
     tuple: A tuple containing:
         - returns (numpy.ndarray): The array of returns for the selected date range.
