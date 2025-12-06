@@ -15,7 +15,7 @@ def _max_lookback(n_days_in: int | None = None, n_days_in_range: Tuple[int, int]
         raise ValueError("Provide at least one among n_days_in or n_days_in_range.")
     return int(n_days_in if n_days_in is not None else n_days_in_range[1])
 
-def prepare_dataset( date_bounds: Tuple[str, str], top: Tuple[int, int]=(0,3000), n_days_out: int = 5, shift: int = 1, filename=DATA,
+def prepare_dataset( date_bounds: Tuple[str, str], market_cap_range: Tuple[int, int]=(0,3000), n_days_out: int = 5, shift: int = 1, filename=DATA,
                      n_days_in: int | None = None, n_days_in_range: Tuple[int, int] | None = None):
     """
     Prepares the dataset for the given parameters.
@@ -23,7 +23,7 @@ def prepare_dataset( date_bounds: Tuple[str, str], top: Tuple[int, int]=(0,3000)
     n_days_in (int, optional): Input window.
     n_days_in_range (tuple, optional): Range of possible input windows.
     date_bounds (tuple): A tuple containing the start and end dates (d0, d1) for the data selection.
-    top (tuple, optional): Slice of stocks to select by Market Cap. Defaults to (0, 3000).
+    market_cap_range (tuple, optional): Slice of stocks to select by Market Cap. Defaults to (0, 3000).
     filename (str, optional): Path to the joblib file containing the dataset. Defaults to DATA.
     Returns:
     tuple: A tuple containing:
@@ -46,7 +46,7 @@ def prepare_dataset( date_bounds: Tuple[str, str], top: Tuple[int, int]=(0,3000)
     if hasattr(bundle, 'available_stocks') and hasattr(bundle.available_stocks, '_mmap'):
             bundle.available_stocks._mmap.close()
     
-    available_stocks = available_stocks.iloc[:,top[0]:top[1]]
+    available_stocks = available_stocks.iloc[:,market_cap_range[0]:market_cap_range[1]]
     available_stocks.index = pd.to_datetime(available_stocks.index)
     
     if returns_cols_numeric:
@@ -232,7 +232,7 @@ def real_data_producer( historicalData: np.ndarray, available_stocks: np.ndarray
 
 
 def real_data_pipeline( batch_size: int, date_bounds: Tuple[str, str], n_days_out: int, n_days_in: int = None, n_days_in_range: Tuple[int, int] = None, shift: int = 1, 
-                        n_stocks: int = None, n_stocks_range: Tuple[int,int] = None, top : Tuple[int,int]=(0,3000),
+                        n_stocks: int = None, n_stocks_range: Tuple[int,int] = None, market_cap_range : Tuple[int,int]=(0,3000),
                         sequential: bool = False, return_generator: bool =False,  common_stocks: bool = False,
                          rng: np.random.Generator = None, dtype: tf.DType = tf.float32, filename: str = DATA):
     """
@@ -247,7 +247,7 @@ def real_data_pipeline( batch_size: int, date_bounds: Tuple[str, str], n_days_ou
         shift (int, optional): Number of days to shift the output data. Defaults to 1.
         n_stocks (int, optional): Number of stocks to select.
         n_stocks_range (Tuple[int, int], optional): Range (min, max) for number of stocks to select.
-        top (Tuple[int, int], optional): Slice of stocks to select by Market Cap. Defaults to (0, 3000).
+        market_cap_range (Tuple[int, int], optional): Slice of stocks to select by Market Cap. Defaults to (0, 3000).
         sequential (bool, optional): If True, selected timesteps in a batch will be sequential.
         common_stocks (bool, optional): If True, uses a common stock sampler across timesteps. Warning: This will imply a selection bias.
         return_generator (bool, optional): If True, returns the generator function instead of a tf.data.Dataset.
@@ -268,7 +268,7 @@ def real_data_pipeline( batch_size: int, date_bounds: Tuple[str, str], n_days_ou
         ...     n_days_out=5,
         ...     n_days_in=800,
         ...     n_stocks=50,
-        ...     top=(0,3000),
+        ...     market_cap_range=(0,3000),
         ...     shift=1,
         ...     return_generator=True,
         ...     rng=np.random.default_rng(0)
@@ -289,7 +289,7 @@ def real_data_pipeline( batch_size: int, date_bounds: Tuple[str, str], n_days_ou
     """
     
 
-    historicalData, available_stocks, _ = prepare_dataset(date_bounds=date_bounds, top=top, n_days_out=n_days_out, 
+    historicalData, available_stocks, _ = prepare_dataset(date_bounds=date_bounds, market_cap_range=market_cap_range, n_days_out=n_days_out, 
                                                           shift=shift, n_days_in=n_days_in, n_days_in_range=n_days_in_range, filename=filename)
     
     producer =  real_data_producer( historicalData=historicalData, available_stocks=available_stocks, 
