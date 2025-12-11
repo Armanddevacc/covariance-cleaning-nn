@@ -1,7 +1,6 @@
 import numpy as np
 import torch
-from scipy import stats
-from data.missing_patterns import make_monotone_pattern, make_random_pattern_vecto
+from data.missing_patterns import make_random_pattern_vecto
 from data.estimators import (
     fit_monotone_regressions,
     reconstruct_mu_sigma_from_phi,
@@ -9,6 +8,7 @@ from data.estimators import (
 from models.utils import eigen_decomp
 from data.estimators import torch_cov_pairwise
 import scipy.stats as st
+from data.QIS import QIS_batched
 
 
 # generator of the data as suggested by Prof B
@@ -144,6 +144,7 @@ def data_generator_2types(
         # -----------------------------------------------------------------------------------------
 
         # --------- other style --------------------------
+        # 1.
         Sigma_hat_cov_no_miss = torch_cov_pairwise(R)
 
         eigvals_cov_no_miss, eigvecs_cov_no_miss = torch.linalg.eigh(
@@ -153,4 +154,14 @@ def data_generator_2types(
         lam_emp_cov_no_miss = torch.flip(eigvals_cov_no_miss, dims=[1]).unsqueeze(-1)
         Q_emp_cov_no_miss = torch.flip(eigvecs_cov_no_miss, dims=[2])
 
-        yield lam_emp_cov_miss, Q_emp_cov_miss, Sigma_true, T, Tmin_mean, Tmax_mean, lam_emp_cov_no_miss, Q_emp_cov_no_miss
+        # 2.
+        Sigma_hat_QIS_no_miss = QIS_batched(R)
+
+        eigvals_QIS_no_miss, eigvecs_QIS_no_miss = torch.linalg.eigh(
+            Sigma_hat_QIS_no_miss
+        )
+
+        lam_QIS_no_miss = torch.flip(eigvals_QIS_no_miss, dims=[1]).unsqueeze(-1)
+        Q_QIS_no_miss = torch.flip(eigvecs_QIS_no_miss, dims=[2])
+
+        yield lam_emp_cov_miss, Q_emp_cov_miss, Sigma_true, T, Tmin_mean, Tmax_mean, lam_emp_cov_no_miss, Q_emp_cov_no_miss, lam_QIS_no_miss, Q_QIS_no_miss
