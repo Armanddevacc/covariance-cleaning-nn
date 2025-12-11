@@ -3,6 +3,7 @@ from typing import Sequence, Optional, List
 
 try:
     import numba as nb
+
     NUMBA_AVAILABLE = True
 except Exception:
     nb = None
@@ -12,8 +13,11 @@ except Exception:
 # ------------------ Numba helpers (if available) ------------------
 
 if NUMBA_AVAILABLE:
-    @nb.njit(inline='always')
-    def _build_allowed_candidates(bi: np.ndarray, kept_mask: np.ndarray, out_idx: np.ndarray) -> int:
+
+    @nb.njit(inline="always")
+    def _build_allowed_candidates(
+        bi: np.ndarray, kept_mask: np.ndarray, out_idx: np.ndarray
+    ) -> int:
         """
         bi, kept_mask: uint8 (0/1) of length universe.
         Writes allowed indices to out_idx and returns the count.
@@ -26,7 +30,7 @@ if NUMBA_AVAILABLE:
                 cnt += 1
         return cnt
 
-    @nb.njit(inline='always')
+    @nb.njit(inline="always")
     def _partial_shuffle_pick_first_k(a: np.ndarray, n: int, k: int):
         """
         Partial Fisher–Yates: a[0:k] becomes a uniform k-subset of a[0:n].
@@ -38,9 +42,13 @@ if NUMBA_AVAILABLE:
             a[j] = tmp
 
     @nb.njit
-    def _chain_window_numba(bitsets_u8_window: np.ndarray, m: int,
-                            kept_mask: np.ndarray, candidates: np.ndarray,
-                            out_int32: np.ndarray) -> None:
+    def _chain_window_numba(
+        bitsets_u8_window: np.ndarray,
+        m: int,
+        kept_mask: np.ndarray,
+        candidates: np.ndarray,
+        out_int32: np.ndarray,
+    ) -> None:
         """
         bitsets_u8_window: (k, universe) uint8 0/1 for the contiguous window.
         out_int32: (k, m) where we write the result.
@@ -64,7 +72,7 @@ if NUMBA_AVAILABLE:
             kept_count = 0
             # keep survivors
             for t in range(m):
-                val = out_int32[i-1, t]
+                val = out_int32[i - 1, t]
                 if bi[val] == 1:
                     out_int32[i, kept_count] = val
                     kept_count += 1
@@ -91,7 +99,10 @@ if NUMBA_AVAILABLE:
 
 # ------------------ NumPy Fallback (still very fast) ------------------
 
-def _chain_window_numpy(bitsets_u8_window: np.ndarray, m: int, rng: np.random.Generator) -> np.ndarray:
+
+def _chain_window_numpy(
+    bitsets_u8_window: np.ndarray, m: int, rng: np.random.Generator
+) -> np.ndarray:
     """
     bitsets_u8_window: (k, universe) uint8 0/1
     Returns (k, m) uint16.
@@ -132,6 +143,7 @@ def _chain_window_numpy(bitsets_u8_window: np.ndarray, m: int, rng: np.random.Ge
 
 # ------------------ Main Class ------------------
 
+
 class WindowBitsetSampler:
     """
     Preprocesses your K lists (integer values >=0) into uint8 bitsets once
@@ -141,12 +153,14 @@ class WindowBitsetSampler:
     Uses Numba JIT (compiled in __init__) if available, with NumPy fallback.
     """
 
-    def __init__(self,
-                 lists: Sequence[Sequence[int] | np.ndarray],
-                 universe: Optional[int] = None,
-                 use_numba: bool = True,
-                 warmup: bool = True,
-                 seed: Optional[int] = None):
+    def __init__(
+        self,
+        lists: Sequence[Sequence[int] | np.ndarray],
+        universe: Optional[int] = None,
+        use_numba: bool = True,
+        warmup: bool = True,
+        seed: Optional[int] = None,
+    ):
         """
         lists: sequence of K lists/arrays with integer values >=0 (uniqueness not required).
         universe:
@@ -170,7 +184,9 @@ class WindowBitsetSampler:
                         amax = int(a_nonneg.max())
                         max_val = amax if max_val is None else max(max_val, amax)
             if max_val is None:
-                raise ValueError("Cannot infer 'universe': all lists are empty or negative. Pass universe explicitly.")
+                raise ValueError(
+                    "Cannot infer 'universe': all lists are empty or negative. Pass universe explicitly."
+                )
             universe = max_val + 1  # [0..max_val]
         self.universe = int(universe)
 
@@ -189,15 +205,22 @@ class WindowBitsetSampler:
         # RNG and state
         self._rng = np.random.default_rng(seed)
         if self._numba_enabled:
-            _numba_seed(int(seed if seed is not None else np.random.SeedSequence().entropy))
+            _numba_seed(
+                int(seed if seed is not None else np.random.SeedSequence().entropy)
+            )
             # reusable workspace
             self._kept_mask_u8 = np.zeros(self.universe, dtype=np.uint8)
             self._candidates_i32 = np.empty(self.universe, dtype=np.int32)
             if warmup:
                 # Compile for real universe dimensions
                 dummy_out = np.empty((1, 1), dtype=np.int32)
-                _chain_window_numba(self._bitsets[:1], 1,
-                                    self._kept_mask_u8, self._candidates_i32, dummy_out)
+                _chain_window_numba(
+                    self._bitsets[:1],
+                    1,
+                    self._kept_mask_u8,
+                    self._candidates_i32,
+                    dummy_out,
+                )
 
     def seed(self, seed: int) -> None:
         """Resets the seed for NumPy and Numba."""
@@ -215,17 +238,20 @@ class WindowBitsetSampler:
         if m <= 0:
             raise ValueError("m must be > 0.")
 
-        window = self._bitsets[start:start + k]  # (k, universe)
+        window = self._bitsets[start : start + k]  # (k, universe)
 
         if self._numba_enabled:
             out_i32 = np.empty((k, m), dtype=np.int32)
-            _chain_window_numba(window, int(m),
-                                self._kept_mask_u8, self._candidates_i32, out_i32)
+            _chain_window_numba(
+                window, int(m), self._kept_mask_u8, self._candidates_i32, out_i32
+            )
             return out_i32.astype(np.uint16, copy=False)
         else:
             return _chain_window_numpy(window, int(m), self._rng)
 
-    def sample_many_windows(self, starts: Sequence[int], k: int, m: int) -> List[np.ndarray]:
+    def sample_many_windows(
+        self, starts: Sequence[int], k: int, m: int
+    ) -> List[np.ndarray]:
         """Convenient for calculating multiple windows in series; returns a list of (k, m)."""
         return [self.sample_chain_window(int(s), k, m) for s in starts]
 
@@ -245,30 +271,31 @@ class CommonSampler:
     and samples a fixed subset from that intersection.
     Useful for ensuring the selected assets are available throughout the entire batch window.
     """
+
     def __init__(self, lists: Sequence[Sequence[int] | np.ndarray], rng=None):
-        self.sets = list(map(set,lists))
+        self.sets = list(map(set, lists))
         self._rng = rng if rng is not None else np.random.default_rng()
 
-    def __common_observed_indices(self, start,end) -> np.ndarray:
+    def __common_observed_indices(self, start, end) -> np.ndarray:
         sets = self.sets[start:end]
         common = sets[0].intersection(*sets[1:])
         return list(common)
-    
-    def sampler(self, start:int, k:int, m:int) -> np.ndarray:
+
+    def sampler(self, start: int, k: int, m: int) -> np.ndarray:
         """
         Samples 'm' elements common to all lists in [start, start + k].
-        
+
         Args:
             start: Start index of the window.
             k: Length of the window (batch size).
             m: Number of elements to select.
-            
+
         Returns:
             (k, m) array with the same selected elements repeated.
         """
-        common = self.__common_observed_indices(start,start+k)
-        
+        common = self.__common_observed_indices(start, start + k)
+
         if len(common) < m:
             raise ValueError("Not enough common elements to sample from.")
         selected = self._rng.choice(common, size=m, replace=False)
-        return np.tile(selected, (k,1))
+        return np.tile(selected, (k, 1))
