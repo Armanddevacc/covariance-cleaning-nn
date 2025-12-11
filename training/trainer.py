@@ -36,6 +36,7 @@ class Trainer:
         self.loss_history = []
 
     def _prepare_batch(self, batch):
+        # TODO remove this part for the trainer
         lam_emp, Q_emp, Sigma_true, T, Tmin, Tmax = batch
 
         lam_emp = lam_emp

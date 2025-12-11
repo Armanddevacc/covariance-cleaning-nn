@@ -12,16 +12,28 @@ import scipy.stats as st
 
 
 # generator of the data as suggested by Prof B
-def data_generator(batch_size, N_min=20, N_max=300, T_min=50, T_max=300, df_min_factor= 1, df_max_factor= 10 ):
+def data_generator(
+    batch_size,
+    N_min=20,
+    N_max=300,
+    T_min=50,
+    T_max=300,
+    df_min_factor=1,
+    df_max_factor=2,
+):
     while True:
         N = np.random.randint(N_min, N_max + 1)
         T = np.random.randint(T_min, T_max + 1)
 
         # --------------- use inverse wishart to sample true covariance ----------------
 
-        df = np.random.randint( df_min_factor * (N + 2), df_max_factor * N, size=batch_size)  # degrees of freedom for invwishart
-        invwishart_sampler = np.vectorize(lambda x: st.invwishart.rvs(df=x, scale=np.eye(N))*(x-N-1), 
-                                       signature='()->(n,n)')
+        df = np.random.randint(
+            df_min_factor * (N + 2), df_max_factor * N, size=batch_size
+        )  # degrees of freedom for invwishart
+        invwishart_sampler = np.vectorize(
+            lambda x: st.invwishart.rvs(df=x, scale=np.eye(N)) * (x - N - 1),
+            signature="()->(n,n)",
+        )
         Sigma_true = invwishart_sampler(df)
         Sigma_true = torch.tensor(Sigma_true, dtype=torch.float32)
         # we don't center nor normalize since i think it is unnecessary here
@@ -54,33 +66,53 @@ def data_generator(batch_size, N_min=20, N_max=300, T_min=50, T_max=300, df_min_
         yield lam_emp, Q_emp, Sigma_true, T, Tmin_mean, Tmax_mean
 
 
-def data_generator_2types(batch_size, N_min=20, N_max=300, T_min=50, T_max=300):
+def data_generator_2types(
+    batch_size,
+    N_min=20,
+    N_max=300,
+    T_min=50,
+    T_max=300,
+    df_min_factor=1,
+    df_max_factor=2,
+):
     while True:
         N = np.random.randint(N_min, N_max + 1)
         T = np.random.randint(T_min, T_max + 1)
 
-        # sample true covariance
-        df = np.random.uniform(2 * (N + 1), 10 * N, size=batch_size)
-        # as suggested by prof B so that the population will not be the same and
-        # so we don't have the neural network that will learn directly the target without looking at the input.
+        df = np.random.randint(
+            df_min_factor * (N + 2), df_max_factor * N, size=batch_size
+        )
+        invwishart_sampler = np.vectorize(
+            lambda x: st.invwishart.rvs(df=x, scale=np.eye(N)) * (x - N - 1),
+            signature="()->(n,n)",
+        )
+        Sigma_true = invwishart_sampler(df)
+        Sigma_true = torch.tensor(Sigma_true, dtype=torch.float32)
 
-        Sigma_true_np = np.zeros((batch_size, N, N))
-        for i in range(batch_size):
-            Sigma_true_np[i] = stats.invwishart.rvs(
-                df=df[i], scale=np.eye(N)
-            ) * (  # cannot be fully vectorized bc of invwishart
-                2 * (N + 1) - N - 1
-            )
-        Sigma_true = torch.tensor(Sigma_true_np, dtype=torch.float32)
-
-        # Simulate T samples
         Z = torch.randn(batch_size, T, N, dtype=torch.float32)
         L = torch.linalg.cholesky(Sigma_true)
-        R_torch = L @ Z.transpose(1, 2)
+        R = L @ Z.transpose(1, 2)
 
-        R = R_torch.cpu().numpy()
+        R_miss, _, mask = make_random_pattern_vecto(R)  # (B, N, T), (B, N), (B, N, T)
 
-        # Empirical covariance
+        Sigma_hat_cov_miss = torch_cov_pairwise(R_miss)
+
+        eigvals_cov_miss, eigvecs_cov_miss = torch.linalg.eigh(Sigma_hat_cov_miss)
+        lam_emp_cov_miss = torch.flip(eigvals_cov_miss, dims=[1]).unsqueeze(
+            -1
+        )  # (B, N)
+        Q_emp_cov_miss = torch.flip(eigvecs_cov_miss, dims=[2])  # (B, N, N)
+
+        Tmin = mask.float().argmax(dim=2).unsqueeze(-1)
+        Tmax = mask.flip(dims=[2]).float().argmax(dim=2).unsqueeze(-1)
+
+        Tmin_mean = Q_emp_cov_miss.transpose(1, 2).pow(2) @ Tmin.float()
+        Tmax_mean = Q_emp_cov_miss.transpose(1, 2).pow(2) @ Tmax.float()
+
+        # ------
+
+        # Shaffer ...
+        """# Empirical covariance
         R_hat_list = []
         t_vec_list = []
         mask_list = []
@@ -108,32 +140,17 @@ def data_generator_2types(batch_size, N_min=20, N_max=300, T_min=50, T_max=300):
             torch.float32
         )  # (B, N, 1)
         Q_emp_shaffer = eigvecs_desc_shaffer.to(torch.float32)  # (B, N, N)
-
+        """
         # -----------------------------------------------------------------------------------------
-        mask_np = np.stack(mask_list, axis=0)
-        mask = torch.tensor(mask_np, dtype=torch.bool)
 
-        R_hat_np = np.stack(R_hat_list, axis=0)
-        R_hat = torch.tensor(R_hat_np, dtype=torch.float32)
+        # --------- other style --------------------------
+        Sigma_hat_cov_no_miss = torch_cov_pairwise(R)
 
-        # --------- torch covariance with pairwise complete observations --------------------------
-        Sigma_hat = torch_cov_pairwise(
-            R_hat
-        )  # takes a tensor (B, N, T) returns (B, N, N)
+        eigvals_cov_no_miss, eigvecs_cov_no_miss = torch.linalg.eigh(
+            Sigma_hat_cov_no_miss
+        )
 
-        eigvals, eigvecs = torch.linalg.eigh(Sigma_hat)
+        lam_emp_cov_no_miss = torch.flip(eigvals_cov_no_miss, dims=[1]).unsqueeze(-1)
+        Q_emp_cov_no_miss = torch.flip(eigvecs_cov_no_miss, dims=[2])
 
-        eigvals_desc = torch.flip(eigvals, dims=[1])  # (B, N)
-        eigvecs_desc = torch.flip(eigvecs, dims=[2])  # (B, N, N)
-
-        lam_emp = eigvals_desc.unsqueeze(-1).to(torch.float32)  # (B, N, 1)
-        Q_emp = eigvecs_desc.to(torch.float32)  # (B, N, N)
-
-        # --------- Compute additional features ----------------------------------------------------
-        Tmin = mask.float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
-        Tmax = mask.flip(dims=[2]).float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
-
-        Tmin_mean = Q_emp.transpose(1, 2) @ Tmin.float()
-        Tmax_mean = Q_emp.transpose(1, 2) @ Tmax.float()
-
-        yield lam_emp, Q_emp, Sigma_true, T, Tmin_mean, Tmax_mean, lam_emp_shaffer, Q_emp_shaffer
+        yield lam_emp_cov_miss, Q_emp_cov_miss, Sigma_true, T, Tmin_mean, Tmax_mean, lam_emp_cov_no_miss, Q_emp_cov_no_miss
