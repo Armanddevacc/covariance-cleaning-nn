@@ -1,14 +1,14 @@
 import numpy as np
 import torch
 from data.missing_patterns import make_random_pattern_vecto
-from data.estimators import (
+from estimator.shaffer import (
     fit_monotone_regressions,
     reconstruct_mu_sigma_from_phi,
 )
 from models.utils import eigen_decomp
-from data.estimators import torch_cov_pairwise
+from estimator.shaffer import torch_cov_pairwise
 import scipy.stats as st
-from data.QIS import QIS_batched
+from estimator.QIS import QIS_batched
 from data.real_dataloader import real_data_pipeline
 
 
