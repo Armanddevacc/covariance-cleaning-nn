@@ -298,7 +298,7 @@ def real_data_producer(
 
     # Create a dataset from the generator function
     dataset = tf.data.Dataset.from_generator(
-        data_generator(no_miss),
+        lambda: data_generator(no_miss),
         output_signature=(
             (
                 tf.TensorSpec(shape=[batch_size, n, t], dtype=dtype),
@@ -329,6 +329,7 @@ def real_data_pipeline(
     rng: np.random.Generator = None,
     dtype: tf.DType = tf.float32,
     filename: str = DATA,
+    no_miss: bool = False,
 ):
     """
     High-level wrapper that prepares data and returns a producer (or tf.data.Dataset) for real stock returns.
@@ -408,5 +409,6 @@ def real_data_pipeline(
         common_stocks=common_stocks,
         rng=rng,
         dtype=dtype,
+        no_miss=no_miss,
     )
     return producer
