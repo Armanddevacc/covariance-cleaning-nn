@@ -87,7 +87,9 @@ def data_generator_2types(
             Q_emp_cov_no_miss,
             lam_QIS_no_miss,
             Q_QIS_no_miss,
+            R_oos,
         ) = (
+            None,
             None,
             None,
             None,
@@ -110,37 +112,32 @@ def data_generator_2types(
             L = torch.linalg.cholesky(Sigma_true)
             R = L @ Z.transpose(1, 2)
 
-            R_miss, _, mask = make_random_pattern_vecto(
-                R
-            )  # (B, N, T), (B, N), (B, N, T)
-
-            Sigma_hat_cov_no_miss = torch_cov_pairwise(R)
-
-            eigvals_cov_no_miss, eigvecs_cov_no_miss = torch.linalg.eigh(
-                Sigma_hat_cov_no_miss
-            )
-
-            lam_emp_cov_no_miss = torch.flip(eigvals_cov_no_miss, dims=[1]).unsqueeze(
-                -1
-            )
-            Q_emp_cov_no_miss = torch.flip(eigvecs_cov_no_miss, dims=[2])
-
-            # 2.
-            Sigma_hat_QIS_no_miss = QIS_batched(R)
-
-            eigvals_QIS_no_miss, eigvecs_QIS_no_miss = torch.linalg.eigh(
-                Sigma_hat_QIS_no_miss
-            )
-
-            lam_QIS_no_miss = torch.flip(eigvals_QIS_no_miss, dims=[1]).unsqueeze(-1)
-            Q_QIS_no_miss = torch.flip(eigvecs_QIS_no_miss, dims=[2])
         else:
             (rin_tf, mask_tf), R_miss_tf = next(iter(dataset))
-            # rin = torch.from_numpy(rin_tf.numpy())
+            R = torch.from_numpy(rin_tf.numpy())
             mask = torch.from_numpy(mask_tf.numpy())
+            R_oos = torch.from_numpy(R_miss_tf.numpy())
 
-            R_miss = torch.from_numpy(R_miss_tf.numpy())
+        R_miss, _, mask = make_random_pattern_vecto(R)  # (B, N, T), (B, N), (B, N, T)
 
+        Sigma_hat_cov_no_miss = torch_cov_pairwise(R)
+
+        eigvals_cov_no_miss, eigvecs_cov_no_miss = torch.linalg.eigh(
+            Sigma_hat_cov_no_miss
+        )
+
+        lam_emp_cov_no_miss = torch.flip(eigvals_cov_no_miss, dims=[1]).unsqueeze(-1)
+        Q_emp_cov_no_miss = torch.flip(eigvecs_cov_no_miss, dims=[2])
+
+        # 2.
+        Sigma_hat_QIS_no_miss = QIS_batched(R)
+
+        eigvals_QIS_no_miss, eigvecs_QIS_no_miss = torch.linalg.eigh(
+            Sigma_hat_QIS_no_miss
+        )
+
+        lam_QIS_no_miss = torch.flip(eigvals_QIS_no_miss, dims=[1]).unsqueeze(-1)
+        Q_QIS_no_miss = torch.flip(eigvecs_QIS_no_miss, dims=[2])
         Sigma_hat_cov_miss = torch_cov_pairwise(R_miss)
 
         eigvals_cov_miss, eigvecs_cov_miss = torch.linalg.eigh(Sigma_hat_cov_miss)
@@ -192,4 +189,4 @@ def data_generator_2types(
         # --------- other style --------------------------
         # 1.
 
-        yield lam_emp_cov_miss, Q_emp_cov_miss, Sigma_true, T, Tmin_mean, Tmax_mean, lam_emp_cov_no_miss, Q_emp_cov_no_miss, lam_QIS_no_miss, Q_QIS_no_miss
+        yield lam_emp_cov_miss, Q_emp_cov_miss, Sigma_true, T, Tmin_mean, Tmax_mean, lam_emp_cov_no_miss, Q_emp_cov_no_miss, lam_QIS_no_miss, Q_QIS_no_miss, R_oos

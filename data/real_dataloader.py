@@ -138,6 +138,7 @@ def real_data_producer(
     common_stocks: bool = False,
     rng: np.random.Generator = None,
     dtype: tf.DType = tf.float32,
+    no_miss: bool = False,
 ):
     """
     Generates a TensorFlow dataset that produces batches of real stock data for training models.
@@ -220,7 +221,7 @@ def real_data_producer(
                 seed=rng.integers(0, 2**31),
             ).sample_chain_window
 
-    def data_generator():
+    def data_generator(no_miss):
 
         effective_n_days_in = lookback
         base_input_offsets = np.arange(
@@ -275,6 +276,8 @@ def real_data_producer(
 
             # Returns In-sample
             returns_in_raw = historicalData[time_indices_in, selected_stocks[..., None]]
+            if np.isnan(returns_in_raw).any():
+                continue  # skip this iteration
             nan_in = np.isnan(returns_in_raw)
             # returns_in = np.where(nan_in, 0.0, returns_in_raw) no keep it nan it is how the network realise
 
@@ -288,14 +291,14 @@ def real_data_producer(
             yield (returns_in_raw, nan_in), returns_out
 
     if return_generator:
-        return data_generator
+        return data_generator(no_miss)
 
     n = n_stocks if n_stocks else None
     t = None if n_days_in_range is not None else n_days_in if n_days_in else lookback
 
     # Create a dataset from the generator function
     dataset = tf.data.Dataset.from_generator(
-        data_generator,
+        data_generator(no_miss),
         output_signature=(
             (
                 tf.TensorSpec(shape=[batch_size, n, t], dtype=dtype),
