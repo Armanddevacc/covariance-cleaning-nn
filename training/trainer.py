@@ -35,27 +35,6 @@ class Trainer:
 
         self.loss_history = []
 
-    def _prepare_batch(self, batch):
-        # TODO remove this part for the trainer
-        lam_emp, Q_emp, Sigma_true, T, Tmin, Tmax = batch
-
-        lam_emp = lam_emp
-        Q_emp = Q_emp
-        Sigma_true = Sigma_true
-        Tmin = Tmin.float()
-        Tmax = Tmax.float()
-
-        # Build conditioning scalars
-        T_vec = torch.full((lam_emp.shape[0], lam_emp.shape[1], 1), T)
-        N_vec = torch.full((lam_emp.shape[0], lam_emp.shape[1], 1), lam_emp.shape[1])
-
-        # Build input sequence to the GRU
-        input_seq = torch.cat(
-            [lam_emp, N_vec, T_vec, N_vec / T_vec, Tmin, Tmax], dim=-1
-        )
-        # could add df later
-        return input_seq, Q_emp, Sigma_true, T
-
     def train(self):
         print(f"Starting training for {self.epochs} epochs…")
 
@@ -74,14 +53,13 @@ class Trainer:
             for _ in range(
                 self.accumulate_steps
             ):  # accumulate gradients over multiple batches
-                batch = next(generator)
-                input_seq, Q_emp, Sigma_true, T = self._prepare_batch(batch)
+                input_seq, Q_emp, Mat_oos, T = next(generator)
 
                 # forward
                 lam_pred = self.model(input_seq)
 
                 # loss
-                loss = self.loss_function(lam_pred, Q_emp, Sigma_true, T)
+                loss = self.loss_function(lam_pred, Q_emp, Mat_oos, T)
                 (loss / self.accumulate_steps).backward()
 
             nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)  # keeps

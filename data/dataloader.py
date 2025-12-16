@@ -63,9 +63,21 @@ def data_generator(
         Tmin_mean = Q_emp.transpose(1, 2).pow(2) @ Tmin.float()
         Tmax_mean = Q_emp.transpose(1, 2).pow(2) @ Tmax.float()
 
-        yield lam_emp, Q_emp, Sigma_true, T, Tmin_mean, Tmax_mean
+        # ----------------------------------- Prepare Batch --------------------------------------
+
+        # Build conditioning scalars
+        T_vec = torch.full((lam_emp.shape[0], lam_emp.shape[1], 1), T)
+        N_vec = torch.full((lam_emp.shape[0], lam_emp.shape[1], 1), lam_emp.shape[1])
+
+        # Build input sequence to the GRU
+        input_seq = torch.cat(
+            [lam_emp, N_vec, T_vec, N_vec / T_vec, Tmin_mean, Tmax_mean], dim=-1
+        )
+
+        yield input_seq, Q_emp, Sigma_true, T
 
 
+# data generator that yields all the data for tests
 def data_generator_2types(
     batch_size,
     N_min=20,
