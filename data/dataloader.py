@@ -77,6 +77,58 @@ def data_generator(
         yield input_seq, Q_emp, Sigma_true, T
 
 
+# generator of the data with market data
+def data_generator_real_data(
+    N_min=20,
+    N_max=300,
+    T_min=50,
+    T_max=300,
+    dataset=None,
+):
+    while True:
+        N = np.random.randint(N_min, N_max + 1)  # defined in dataset gen
+        T = np.random.randint(T_min, T_max + 1)
+
+        # --------------------------- Import market data  ----------------------------------------
+
+        (rin_tf, mask_tf), R_miss_tf = next(iter(dataset))
+        R = torch.from_numpy(rin_tf.numpy())
+        mask = torch.from_numpy(mask_tf.numpy())
+        R_oos = torch.from_numpy(R_miss_tf.numpy())
+
+        # -------------------- Add NaNs and sample covariance Matrix  ---------------------------
+
+        R_hat, _, mask = make_random_pattern_vecto(R)
+
+        # Empirical covariance
+        Sigma_hat = torch_cov_pairwise(R_hat)
+
+        # ----------------- Compute eigVals, EigVector and important Times  ----------------------
+        eigvals, eigvecs = torch.linalg.eigh(Sigma_hat)
+
+        lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)
+        Q_emp = torch.flip(eigvecs, dims=[2])
+
+        Tmin = mask.float().argmax(dim=2).unsqueeze(-1)
+        Tmax = mask.flip(dims=[2]).float().argmax(dim=2).unsqueeze(-1)
+
+        Tmin_mean = Q_emp.transpose(1, 2).pow(2) @ Tmin.float()
+        Tmax_mean = Q_emp.transpose(1, 2).pow(2) @ Tmax.float()
+
+        # ----------------------------------- Prepare Batch --------------------------------------
+
+        # Build conditioning scalars
+        T_vec = torch.full((lam_emp.shape[0], lam_emp.shape[1], 1), T)
+        N_vec = torch.full((lam_emp.shape[0], lam_emp.shape[1], 1), lam_emp.shape[1])
+
+        # Build input sequence to the GRU
+        input_seq = torch.cat(
+            [lam_emp, N_vec, T_vec, N_vec / T_vec, Tmin_mean, Tmax_mean], dim=-1
+        )
+
+        yield input_seq, Q_emp, R_oos, T
+
+
 # data generator that yields all the data for tests
 def data_generator_2types(
     batch_size,

@@ -1,4 +1,5 @@
 import torch
+from utils.utils import reconstruct_cov
 
 
 # Potters–Bouchaud loss
@@ -42,3 +43,14 @@ def loss_function(lam_pred, Q, Sigma_true, T):
     loss_cov = trace_vals * T / N**2  # (B,)
 
     return loss_cov.mean()  # scalar
+
+
+# loss function for
+def loss_function_portfolio(lam_pred, Q, R_oos, T):
+    Sigma = reconstruct_cov(Q, lam_pred)
+    B, N, _ = Sigma.shape
+    ones = torch.ones(B, N, 1, dtype=Sigma.dtype)
+    x = torch.linalg.solve(Sigma, ones)
+    weights = x / x.sum(dim=1, keepdim=True)
+    p_oos = weights.transpose(1, 2) @ R_oos[:, :, T:]
+    return -p_oos.mean()

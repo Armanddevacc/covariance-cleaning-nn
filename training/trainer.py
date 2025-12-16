@@ -7,6 +7,7 @@ class Trainer:
     def __init__(
         self,
         model,
+        is_train_on_real_data,
         loss_function,
         data_generator,
         lr,
@@ -19,8 +20,10 @@ class Trainer:
         T_max,
         log_interval,
         accumulate_steps,
+        dataset,
     ):
         self.model = model
+        self.is_train_on_real_data = is_train_on_real_data
         self.optimizer = get_optimizer(model, lr=lr, weight_decay=weight_decay)
         self.loss_function = loss_function
         self.data_generator = data_generator
@@ -32,19 +35,29 @@ class Trainer:
         self.T_max = T_max
         self.log_interval = log_interval
         self.accumulate_steps = accumulate_steps
+        self.dataset = dataset
 
         self.loss_history = []
 
     def train(self):
         print(f"Starting training for {self.epochs} epochs…")
 
-        generator = self.data_generator(
-            self.batch_size,
-            N_min=self.N_min,
-            N_max=self.N_max,
-            T_min=self.T_min,
-            T_max=self.T_max,
-        )
+        if not self.is_train_on_real_data:
+            generator = self.data_generator(
+                self.batch_size,
+                N_min=self.N_min,
+                N_max=self.N_max,
+                T_min=self.T_min,
+                T_max=self.T_max,
+            )
+        else:
+            generator = self.data_generator(
+                self.N_min,
+                self.N_max,
+                self.T_min,
+                self.T_max,
+                self.dataset,
+            )
 
         for epoch in range(self.epochs):
             self.model.train()
