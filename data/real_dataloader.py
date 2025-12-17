@@ -171,7 +171,8 @@ def real_data_producer( historicalData: np.ndarray, available_stocks: np.ndarray
     def data_generator():
         
         effective_n_days_in = lookback
-        base_input_offsets = np.arange(-effective_n_days_in + 1, 1, dtype=np.int64).reshape(1, 1, -1)
+        # Input window ends right before the first output timestep (shift days ahead)
+        base_input_offsets = np.arange(shift - effective_n_days_in, shift, dtype=np.int64).reshape(1, 1, -1)
         
         while True:
             
@@ -196,7 +197,7 @@ def real_data_producer( historicalData: np.ndarray, available_stocks: np.ndarray
             # Adjust time offsets if n_days_range is specified
             if n_days_in_range is not None:
                 n_days_in_local = rng.integers(n_days_in_range[0], n_days_in_range[1] + 1)
-                input_offsets = np.arange(-n_days_in_local + 1, 1, dtype=np.int64).reshape(1, 1, -1)
+                input_offsets = np.arange(shift - n_days_in_local, shift, dtype=np.int64).reshape(1, 1, -1)
             else:
                 n_days_in_local = effective_n_days_in
                 input_offsets = base_input_offsets
