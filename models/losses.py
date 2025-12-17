@@ -3,23 +3,6 @@ from utils.utils import reconstruct_cov
 
 
 # Potters–Bouchaud loss
-def loss_function_test(
-    lam_pred, Q, Sigma_true, T
-):  # size lam_pred (B, N, 1), Q (B, N, N), Sigma_true (B, N, N)
-    N = Sigma_true.shape[1]
-
-    Lambda_pred = torch.diag_embed(lam_pred.squeeze(-1))
-
-    Sigma_pred = Q @ Lambda_pred @ Q.transpose(1, 2)
-
-    error = torch.matmul(Sigma_pred - Sigma_true).diagonal(dim1=1, dim2=2).sum(dim=1)
-
-    loss_cov = (1 / N) * error
-
-    return loss_cov
-
-
-# Potters–Bouchaud loss
 def loss_function(lam_pred, Q, Sigma_true, T):
     B, N = lam_pred.shape
 
@@ -33,7 +16,7 @@ def loss_function(lam_pred, Q, Sigma_true, T):
     Delta = Sigma_pred - Sigma_true  # (B, N, N)
 
     ## CB: It seems more efficient to compute the Frobenius norm via squaring element-wise and summing.
-    # Square of the matrix (Delta^2 = Delta @ Delta)
+    # Square of the matrix (Delta^2 = Delta @ Delta) Symetric matrix so we don't need to transpose !
     Delta2 = Delta @ Delta  # (B, N, N)
 
     # Trace of Delta2 = sum of diagonal
@@ -45,7 +28,7 @@ def loss_function(lam_pred, Q, Sigma_true, T):
     return loss_cov.mean()  # scalar
 
 
-# loss function for
+# loss function which is actually : -profit, beacause we want to maximize them
 def loss_function_portfolio(lam_pred, Q, R_oos, T):
     Sigma = reconstruct_cov(Q, lam_pred)
     B, N, _ = Sigma.shape

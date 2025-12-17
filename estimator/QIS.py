@@ -141,3 +141,19 @@ def QIS_batched(sample, ddof=1):
     sigma = U @ D @ U.transpose(1, 2)
 
     return sigma  # (B, N, N)
+
+
+def QIS(Sigma, batch_size_oos, N, T):
+    """
+    Sigma has to be positive defiine
+    """
+    Z = torch.randn(batch_size_oos, T, N, dtype=torch.float32)
+    L = torch.linalg.cholesky(Sigma)
+    R = L @ Z.transpose(1, 2)
+    Sigma_hat_QIS = QIS_batched(R)
+
+    eigvals_QIS, eigvecs_QIS = torch.linalg.eigh(Sigma_hat_QIS)
+
+    lam_QIS = torch.flip(eigvals_QIS, dims=[1]).unsqueeze(-1)
+    Q_QIS = torch.flip(eigvecs_QIS, dims=[2])
+    return lam_QIS, Q_QIS

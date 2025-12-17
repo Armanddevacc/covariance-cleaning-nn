@@ -21,6 +21,7 @@ class Trainer:
         log_interval,
         accumulate_steps,
         dataset,
+        missing_constant,
     ):
         self.model = model
         self.is_train_on_real_data = is_train_on_real_data
@@ -36,6 +37,7 @@ class Trainer:
         self.log_interval = log_interval
         self.accumulate_steps = accumulate_steps
         self.dataset = dataset
+        self.missing_constant = missing_constant
 
         self.loss_history = []
 
@@ -49,6 +51,7 @@ class Trainer:
                 N_max=self.N_max,
                 T_min=self.T_min,
                 T_max=self.T_max,
+                missing_constant=self.missing_constant,
             )
         else:
             generator = self.data_generator(
@@ -57,6 +60,7 @@ class Trainer:
                 self.T_min,
                 self.T_max,
                 self.dataset,
+                missing_constant=self.missing_constant,
             )
 
         for epoch in range(self.epochs):

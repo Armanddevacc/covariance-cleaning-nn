@@ -15,6 +15,7 @@ from data.real_dataloader import real_data_pipeline
 # generator of the data as suggested by Prof B
 def data_generator(
     batch_size,
+    missing_constant,  # >= 1, 1 being no missingness
     N_min=20,
     N_max=300,
     T_min=50,
@@ -44,7 +45,9 @@ def data_generator(
         L = torch.linalg.cholesky(Sigma_true)
         R = L @ Z.transpose(1, 2)  # (B, N, T)
         # Empirical covariance
-        R_hat, _, mask = make_random_pattern_vecto(R)  # (B, N, T), (B, N), (B, N, T)
+        R_hat, _, mask = make_random_pattern_vecto(
+            R, missing_constant
+        )  # (B, N, T), (B, N), (B, N, T)
 
         Sigma_hat = torch_cov_pairwise(
             R_hat
@@ -79,6 +82,7 @@ def data_generator(
 
 # generator of the data with market data
 def data_generator_real_data(
+    missing_constant,  # >= 1, 1 being no missingness
     N_min=20,
     N_max=300,
     T_min=50,
@@ -98,7 +102,7 @@ def data_generator_real_data(
 
         # -------------------- Add NaNs and sample covariance Matrix  ---------------------------
 
-        R_hat, _, mask = make_random_pattern_vecto(R)
+        R_hat, _, mask = make_random_pattern_vecto(R, missing_constant)
 
         # Empirical covariance
         Sigma_hat = torch_cov_pairwise(R_hat)
@@ -151,9 +155,7 @@ def data_generator_2types(
             Q_emp_cov_no_miss,
             lam_QIS_no_miss,
             Q_QIS_no_miss,
-            R_oos,
         ) = (
-            None,
             None,
             None,
             None,

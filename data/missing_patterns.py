@@ -20,11 +20,13 @@ def make_monotone_pattern(R):
     return R_mono, t_vec, mask
 
 
-def make_random_pattern_vecto(R):  # size (B, N, T)
+def make_random_pattern_vecto(R, missing_constant):  # size (B, N, T)
     # vectorized version
     B, N, T = R.shape
 
-    T_rand = torch.randint(low=T // 2, high=T + 1, size=(B, N - 1))  # (B, N-1)
+    T_rand = torch.randint(
+        low=T // missing_constant, high=T + 1, size=(B, N - 1)
+    )  # (B, N-1)
     T_last = torch.full(
         (B, 1), T
     )  # (B, 1) garantee to have at least one full observation
