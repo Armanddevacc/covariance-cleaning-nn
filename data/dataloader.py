@@ -146,7 +146,7 @@ def data_generator_2types(
         T = np.random.randint(T_min, T_max + 1)
 
         (
-            Sigma_true,
+            Mat_oos,
             lam_emp_cov_no_miss,
             Q_emp_cov_no_miss,
             lam_QIS_no_miss,
@@ -169,18 +169,18 @@ def data_generator_2types(
                 lambda x: st.invwishart.rvs(df=x, scale=np.eye(N)) * (x - N - 1),
                 signature="()->(n,n)",
             )
-            Sigma_true = invwishart_sampler(df)
-            Sigma_true = torch.tensor(Sigma_true, dtype=torch.float32)
+            Mat_oos = invwishart_sampler(df)
+            Mat_oos = torch.tensor(Mat_oos, dtype=torch.float32)
 
             Z = torch.randn(batch_size, T, N, dtype=torch.float32)
-            L = torch.linalg.cholesky(Sigma_true)
+            L = torch.linalg.cholesky(Mat_oos)
             R = L @ Z.transpose(1, 2)
 
         else:
-            (rin_tf, mask_tf), R_miss_tf = next(iter(dataset))
+            (rin_tf, mask_tf), R_oos_tf = next(iter(dataset))
             R = torch.from_numpy(rin_tf.numpy())
             mask = torch.from_numpy(mask_tf.numpy())
-            R_oos = torch.from_numpy(R_miss_tf.numpy())
+            Mat_oos = torch.from_numpy(R_oos_tf.numpy())
 
         R_miss, _, mask = make_random_pattern_vecto(R)  # (B, N, T), (B, N), (B, N, T)
 
@@ -248,9 +248,23 @@ def data_generator_2types(
         )  # (B, N, 1)
         Q_emp_shaffer = eigvecs_desc_shaffer.to(torch.float32)  # (B, N, N)
         """
-        # -----------------------------------------------------------------------------------------
+        # ----------------------------------- Prepare Batch --------------------------------------
 
-        # --------- other style --------------------------
-        # 1.
+        # Build conditioning scalars
+        T_vec = torch.full((lam_emp_cov_miss.shape[0], lam_emp_cov_miss.shape[1], 1), T)
+        N_vec = torch.full(
+            (lam_emp_cov_miss.shape[0], lam_emp_cov_miss.shape[1], 1),
+            lam_emp_cov_miss.shape[1],
+        )
 
-        yield lam_emp_cov_miss, Q_emp_cov_miss, Sigma_true, T, Tmin_mean, Tmax_mean, lam_emp_cov_no_miss, Q_emp_cov_no_miss, lam_QIS_no_miss, Q_QIS_no_miss, R_oos
+        # Build input sequence to the GRU
+        input_seq_cov_miss = torch.cat(
+            [lam_emp_cov_miss, N_vec, T_vec, N_vec / T_vec, Tmin_mean, Tmax_mean],
+            dim=-1,
+        )
+        input_seq_cov_no_miss = torch.cat(
+            [lam_emp_cov_no_miss, N_vec, T_vec, N_vec / T_vec, Tmin_mean, Tmax_mean],
+            dim=-1,
+        )
+
+        yield input_seq_cov_miss, Q_emp_cov_miss, Mat_oos, T, Tmin_mean, Tmax_mean, input_seq_cov_no_miss, Q_emp_cov_no_miss, lam_QIS_no_miss, Q_QIS_no_miss
