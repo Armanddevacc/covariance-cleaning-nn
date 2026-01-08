@@ -1,6 +1,7 @@
 from training.optimizer import get_optimizer
 import torch.nn as nn
 import torch
+from estimator.MLE import torch_cov_pairwise
 
 
 class Trainer:
@@ -55,11 +56,11 @@ class Trainer:
             )
         else:
             generator = self.data_generator(
-                self.N_min,
-                self.N_max,
-                self.T_min,
-                self.T_max,
-                self.dataset,
+                N_min=self.N_min,
+                N_max=self.N_max,
+                T_min=self.T_min,
+                T_max=self.T_max,
+                dataset=self.dataset,
                 missing_constant=self.missing_constant,
             )
 
@@ -76,6 +77,9 @@ class Trainer:
                 lam_pred = self.model(input_seq)
 
                 # loss
+                if self.is_train_on_real_data:
+                    Mat_oos = torch_cov_pairwise(Mat_oos)
+
                 loss = self.loss_function(lam_pred, Q_emp, Mat_oos, T)
                 (loss / self.accumulate_steps).backward()
 
@@ -86,7 +90,7 @@ class Trainer:
 
             # logging
             if (epoch + 1) % self.log_interval == 0:
-                print(f"Epoch {epoch+1}/{self.epochs} — loss: {loss.item():.6f}")
+                print(f"Epoch {epoch+1}/{self.epochs} — loss: {loss.item():.8f}")
 
         print("Training complete.")
         return self.loss_history
