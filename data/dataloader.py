@@ -6,7 +6,7 @@ from estimator.shaffer import (
     reconstruct_mu_sigma_from_phi,
 )
 from models.utils import eigen_decomp
-from estimator.shaffer import torch_cov_pairwise
+from estimator.MLE import torch_cov_pairwise
 import scipy.stats as st
 from estimator.QIS import QIS_batched
 from data.real_dataloader import real_data_pipeline
@@ -96,9 +96,14 @@ def data_generator_real_data(
         # --------------------------- Import market data  ----------------------------------------
 
         (rin_tf, mask_tf), R_miss_tf = next(iter(dataset))
-        R = torch.from_numpy(rin_tf.numpy())
-        mask = torch.from_numpy(mask_tf.numpy())
-        R_oos = torch.from_numpy(R_miss_tf.numpy())
+        assert mask_tf.numpy().shape[2] >= T
+        assert mask_tf.numpy().shape[1] >= N
+
+        idx = np.random.choice(rin_tf.numpy().shape[1], size=N, replace=False)
+        rin_tf = rin_tf.numpy()[:, idx, mask_tf.numpy().shape[2] - T :]
+        R = torch.from_numpy(rin_tf)
+        mask = torch.from_numpy(mask_tf.numpy()[:, idx, mask_tf.numpy().shape[2] - T :])
+        R_oos = torch.from_numpy(R_miss_tf.numpy()[:, idx, :])
 
         # -------------------- Add NaNs and sample covariance Matrix  ---------------------------
 
