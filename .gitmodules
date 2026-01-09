@@ -1,0 +1,3 @@
+[submodule "nearest_correlation"]
+	path = nearest_correlation
+	url = https://github.com/mikecroucher/nearest_correlation.git
