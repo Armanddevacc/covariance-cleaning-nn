@@ -9,6 +9,8 @@ import joblib
 
 from typing import Tuple
 
+import scipy.stats as st
+
 
 def _max_lookback(
     n_days_in: int | None = None, n_days_in_range: Tuple[int, int] | None = None
@@ -288,7 +290,9 @@ def real_data_producer(
             nan_out = np.isnan(returns_out_raw)
             returns_out = np.where(nan_out, 0.0, returns_out_raw)
 
-            yield (returns_in_raw, nan_in), returns_out
+            yield (st.zscore(returns_in_raw, axis=-1), nan_in), st.zscore(
+                returns_out, axis=-1
+            )
 
     if return_generator:
         return data_generator(no_miss)

@@ -2,6 +2,7 @@ from training.optimizer import get_optimizer
 import torch.nn as nn
 import torch
 from estimator.MLE import torch_cov_pairwise
+import numpy as np
 
 
 class Trainer:
@@ -80,7 +81,11 @@ class Trainer:
                 if self.is_train_on_real_data:
                     Mat_oos = torch_cov_pairwise(Mat_oos)
 
-                loss = self.loss_function(lam_pred, Q_emp, Mat_oos, T)
+                eps = 1e-12
+                std = torch.sqrt(torch.diagonal(Mat_oos, dim1=1, dim2=2))
+                corr = Mat_oos / torch.outer(std + eps, std + eps)
+
+                loss = self.loss_function(lam_pred, Q_emp, corr, T)
                 (loss / self.accumulate_steps).backward()
 
             nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)  # keeps

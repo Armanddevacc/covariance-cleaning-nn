@@ -1,9 +1,10 @@
 import torch
 from utils.utils import reconstruct_cov
+import numpy as np
 
 
 # Potters–Bouchaud loss
-def loss_function(lam_pred, Q, Sigma_true, T):
+def loss_function(lam_pred, Q, Corr, T):
     B, N = lam_pred.shape
 
     # build Lambda_pred
@@ -12,8 +13,12 @@ def loss_function(lam_pred, Q, Sigma_true, T):
     # Reconstruct covariance(s) for all batch samples
     Sigma_pred = Q @ Lambda_pred @ Q.transpose(1, 2)  # (B, N, N)
 
+    eps = 1e-12
+    std = torch.sqrt(torch.diagonal(Sigma_pred, dim1=1, dim2=2))
+    Corr2 = Sigma_pred / torch.outer(std + eps, std + eps)
+
     # Matrix difference
-    Delta = Sigma_pred - Sigma_true  # (B, N, N)
+    Delta = Corr2 - Corr  # (B, N, N)
 
     ## CB: It seems more efficient to compute the Frobenius norm via squaring element-wise and summing.
     # Square of the matrix (Delta^2 = Delta @ Delta) Symetric matrix so we don't need to transpose !
