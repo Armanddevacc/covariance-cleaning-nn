@@ -15,7 +15,7 @@ def loss_function(lam_pred, Q, Corr, T):
 
     eps = 1e-12
     std = torch.sqrt(torch.diagonal(Sigma_pred, dim1=1, dim2=2))
-    Corr2 = Sigma_pred / torch.outer(std + eps, std + eps)
+    Corr2 = Sigma_pred / (std[:, None, :] * std[:, :, None] + eps)
 
     # Matrix difference
     Delta = Corr2 - Corr  # (B, N, N)

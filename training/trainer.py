@@ -82,8 +82,8 @@ class Trainer:
                     Mat_oos = torch_cov_pairwise(Mat_oos)
 
                 eps = 1e-12
-                std = torch.sqrt(torch.diagonal(Mat_oos, dim1=1, dim2=2))
-                corr = Mat_oos / torch.outer(std + eps, std + eps)
+                std = torch.sqrt(torch.diagonal(Mat_oos, dim1=1, dim2=2))  # (B, N)
+                corr = Mat_oos / (std[:, None, :] * std[:, :, None] + eps)
 
                 loss = self.loss_function(lam_pred, Q_emp, corr, T)
                 (loss / self.accumulate_steps).backward()
