@@ -147,7 +147,7 @@ def QIS(Sigma, batch_size_oos, N, T):
     """
     Sigma has to be positive defiine
     """
-    Z = torch.randn(batch_size_oos, T, N, dtype=torch.float32)
+    Z = torch.randn(batch_size_oos, T, N, dtype=torch.float64)
     L = torch.linalg.cholesky(Sigma)
     R = L @ Z.transpose(1, 2)
     Sigma_hat_QIS = QIS_batched(R)

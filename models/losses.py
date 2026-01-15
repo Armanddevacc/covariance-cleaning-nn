@@ -18,7 +18,7 @@ def loss_function_corr(Corr_oos, Corr_pred, T):
     trace_vals = Delta2.diagonal(dim1=1, dim2=2).sum(dim=1)  # (B,)
 
     # Normalized Frobenius estimation error (Potters-Bouchaud)
-    loss_cov = trace_vals * T / N**2  # (B,)
+    loss_cov = torch.sqrt(trace_vals) * np.sqrt(T) / N  # (B,)
 
     return loss_cov.mean()  # scalar
 
