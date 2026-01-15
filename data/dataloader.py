@@ -49,9 +49,15 @@ def data_generator(
             R, missing_constant
         )  # (B, N, T), (B, N), (B, N, T)
 
-        Sigma_hat = torch_cov_pairwise(
-            R_hat
-        )  # takes a tensor (B, N, T) returns (B, N, N)
+        Sigma_hat = torch_cov_pairwise(R_hat)  # (B, N, N)
+        eps = 1e-10
+        I = torch.eye(
+            Sigma_hat.size(-1), device=Sigma_hat.device, dtype=Sigma_hat.dtype
+        )
+        Sigma_hat = Sigma_hat + eps * I  # to be safe from numerical asymmetry
+
+        # By definition Sigma_hat is symetric but numericaly it can be asymmetric at ~1e-12 level for instance, the lines prevent it
+        Sigma_hat = 0.5 * (Sigma_hat + Sigma_hat.transpose(-1, -2))
 
         eigvals, eigvecs = torch.linalg.eigh(
             Sigma_hat
@@ -186,9 +192,9 @@ def data_generator_2types(
                 signature="()->(n,n)",
             )
             Mat_oos = invwishart_sampler(df)
-            Mat_oos = torch.tensor(Mat_oos, dtype=torch.float32)
+            Mat_oos = torch.tensor(Mat_oos, dtype=torch.float64)
 
-            Z = torch.randn(batch_size, T, N, dtype=torch.float32)
+            Z = torch.randn(batch_size, T, N, dtype=torch.float64)
             L = torch.linalg.cholesky(Mat_oos)
             R = L @ Z.transpose(1, 2)
 
