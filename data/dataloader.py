@@ -37,11 +37,11 @@ def data_generator(
             signature="()->(n,n)",
         )
         Sigma_true = invwishart_sampler(df)
-        Sigma_true = torch.tensor(Sigma_true, dtype=torch.float32)
+        Sigma_true = torch.tensor(Sigma_true, dtype=torch.float64)
         # we don't center nor normalize since i think it is unnecessary here
 
         # -------------------- Simulate T samples, vectorized ---------------------------
-        Z = torch.randn(batch_size, T, N)
+        Z = torch.randn(batch_size, T, N, dtype=torch.float64)
         L = torch.linalg.cholesky(Sigma_true)
         R = L @ Z.transpose(1, 2)  # (B, N, T)
         # Empirical covariance
@@ -57,6 +57,9 @@ def data_generator(
             Sigma_hat
         )  # eigh because always symetric by construction
 
+        eigvals = eigvals.float()
+        eigvecs = eigvecs.float()
+
         lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)  # (B, N)
         Q_emp = torch.flip(eigvecs, dims=[2])  # (B, N, N)
 
@@ -69,8 +72,14 @@ def data_generator(
         # ----------------------------------- Prepare Batch --------------------------------------
 
         # Build conditioning scalars
-        T_vec = torch.full((lam_emp.shape[0], lam_emp.shape[1], 1), T)
-        N_vec = torch.full((lam_emp.shape[0], lam_emp.shape[1], 1), lam_emp.shape[1])
+        T_vec = torch.full(
+            (lam_emp.shape[0], lam_emp.shape[1], 1), T, dtype=torch.float32
+        )
+        N_vec = torch.full(
+            (lam_emp.shape[0], lam_emp.shape[1], 1),
+            lam_emp.shape[1],
+            dtype=torch.float32,
+        )
 
         # Build input sequence to the GRU
         input_seq = torch.cat(
