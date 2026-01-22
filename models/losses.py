@@ -23,6 +23,29 @@ def loss_function_corr(Corr_oos, Corr_pred, T):
     return loss_cov.mean()  # scalar
 
 
+import tensorflow as tf
+
+
+# Potters–Bouchaud loss for corr with tensorflow
+def loss_function_corr_tensorflow(Corr_oos, Corr_pred, T):
+    """
+    Corr_true: (B, N, N)
+    Corr_pred: (B, N, N)
+    T: scalar (int or float)
+    """
+    B, N, _ = Corr_oos.shape
+
+    Delta = Corr_pred - Corr_oos  # (B, N, N)
+
+    Delta2 = Delta2 = tf.matmul(Delta, Delta, transpose_a=True)
+
+    trace_vals = tf.linalg.trace(Delta2)  # (B,)
+
+    loss_cov = tf.sqrt(trace_vals) * T / N**2  # (B,)
+
+    return tf.reduce_mean(loss_cov)  # (1)
+
+
 # Potters–Bouchaud loss
 def loss_function(lam_pred, Q, Sigma_oos, T):
     B, N = lam_pred.shape

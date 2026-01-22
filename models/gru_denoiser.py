@@ -27,3 +27,25 @@ class BiGRUSpectralDenoiser(nn.Module):
         out = out.squeeze(-1)
         out = self.activation(out)
         return out
+
+
+import tensorflow as tf
+
+
+class BiGRUSpectralDenoiserTensorFlow(tf.keras.Model):
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.bigru = tf.keras.layers.Bidirectional(
+            tf.keras.layers.GRU(units=hidden_size, return_sequences=True)
+        )
+
+        self.fc = tf.keras.layers.Dense(1)
+        self.activation = tf.keras.layers.Activation("softplus")
+
+    def call(self, x):
+        # x shape: (B, N, 6)
+        h = self.bigru(x)  # (B, N, 2H)
+        out = self.fc(h)  # (B, N, 1)
+        out = tf.squeeze(out, axis=-1)  # (B, N)
+        out = self.activation(out)
+        return out
