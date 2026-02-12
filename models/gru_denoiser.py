@@ -1,5 +1,5 @@
-import torch
 import torch.nn as nn
+import torch
 
 
 class BiGRUSpectralDenoiser(nn.Module):
@@ -10,7 +10,7 @@ class BiGRUSpectralDenoiser(nn.Module):
 
         self.gru = nn.GRU(
             input_size=6,  # The number of input features per sequence data, 1 here
-            hidden_size=hidden_size,  # Tumber of features in the hidden state, one still one eigenvalue
+            hidden_size=hidden_size,  # Number of features in the hidden state, one still one eigenvalue
             num_layers=1,  # amount of GRU we put one after-another
             bias=True,  # We always want bias
             batch_first=True,  # input and output tensors are provided as (batch, seq, feature)
@@ -28,6 +28,30 @@ class BiGRUSpectralDenoiser(nn.Module):
         out = self.activation(out)
         return out
 
+
+"""
+    def forward(self, input_seq, eps=1e-8):
+
+        B, N, _ = input_seq.shape
+        # lam_emp = input_seq[:, :, 0].detach()
+
+        h, _ = self.gru(input_seq)  # (B, N, 2H)
+        logg = self.fc(h).squeeze(-1)  # (B, N)
+
+        # positive gaps
+        g = self.activation(logg) + eps  # (B, N)
+
+        # decreasing spectrum via reversed cumsum:
+        # lam_i = sum_{k=i..N} g_k
+        lam = torch.flip(
+            torch.cumsum(torch.flip(g, dims=[1]), dim=1), dims=[1]
+        )  # (B, N)
+
+        # trace constraint
+        lam = lam * (N / (lam.sum(dim=1, keepdim=True) + eps))
+
+        return lam
+"""
 
 import tensorflow as tf
 

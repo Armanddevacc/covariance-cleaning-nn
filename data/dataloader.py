@@ -1,12 +1,15 @@
 import numpy as np
 import torch
-from data.missing_patterns import make_random_pattern_vecto
+from data.missing_patterns import (
+    make_random_pattern_vecto,
+    tf_make_random_pattern_vecto,
+)
 from estimator.shaffer import (
     fit_monotone_regressions,
     reconstruct_mu_sigma_from_phi,
 )
 from models.utils import eigen_decomp
-from estimator.MLE import torch_cov_pairwise
+from estimator.MLE import torch_cov_pairwise, tf_cov_pairwise
 import scipy.stats as st
 from estimator.QIS import QIS_batched
 from data.real_dataloader import real_data_pipeline
@@ -38,35 +41,40 @@ def data_generator(
         )
         Sigma_true = invwishart_sampler(df)
         Sigma_true = torch.tensor(Sigma_true, dtype=torch.float64)
-        # we don't center nor normalize since i think it is unnecessary here
+        # We don't center nor normalize since I think it is unnecessary here
 
         # -------------------- Simulate T samples, vectorized ---------------------------
         Z = torch.randn(batch_size, T, N, dtype=torch.float64)
         L = torch.linalg.cholesky(Sigma_true)
         R = L @ Z.transpose(1, 2)  # (B, N, T)
+
         # Empirical covariance
         R_hat, _, mask = make_random_pattern_vecto(
             R, missing_constant
         )  # (B, N, T), (B, N), (B, N, T)
 
-        Sigma_hat = torch_cov_pairwise(R_hat)  # (B, N, N)
-        eps = 1e-10
-        I = torch.eye(
-            Sigma_hat.size(-1), device=Sigma_hat.device, dtype=Sigma_hat.dtype
-        )
-        Sigma_hat = Sigma_hat + eps * I  # to be safe from numerical asymmetry
-
+        Sigma_hat = torch_cov_pairwise(R_hat).double()  # (B, N, N)
+        Sigma_hat_diag = torch.diagonal(Sigma_hat, dim1=1, dim2=2)
         # By definition Sigma_hat is symetric but numericaly it can be asymmetric at ~1e-12 level for instance, the lines prevent it
         Sigma_hat = 0.5 * (Sigma_hat + Sigma_hat.transpose(-1, -2))
 
+        eps = 1e-6
+        diag_hat = torch.diagonal(Sigma_hat, dim1=-2, dim2=-1)
+        std_pred = torch.sqrt(torch.clamp(diag_hat, min=eps))
+        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None] + eps)
+
+        corr_hat = 0.5 * (corr_hat + corr_hat.transpose(-1, -2))
+        jitter = 1e-8
+        corr_hat = corr_hat + jitter * torch.eye(N, device=corr_hat.device)
+
         eigvals, eigvecs = torch.linalg.eigh(
-            Sigma_hat
+            corr_hat
         )  # eigh because always symetric by construction
 
-        eigvals = eigvals.float()
+        eigvals = eigvals.float()  # float to prepare batch
         eigvecs = eigvecs.float()
 
-        lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)  # (B, N)
+        lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)  # (B, N, 1)
         Q_emp = torch.flip(eigvecs, dims=[2])  # (B, N, N)
 
         Tmin = mask.float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
@@ -92,7 +100,114 @@ def data_generator(
             [lam_emp, N_vec, T_vec, N_vec / T_vec, Tmin_mean, Tmax_mean], dim=-1
         )
 
-        yield input_seq, Q_emp, Sigma_true, T
+        yield input_seq, Q_emp, Sigma_true, T, Sigma_hat_diag, R
+
+
+import tensorflow as tf
+
+
+# generator of the data as suggested by Prof B
+def tf_data_generator(
+    batch_size,
+    missing_constant,  # >= 1, 1 being no missingness
+    N_min=20,
+    N_max=300,
+    T_min=50,
+    T_max=300,
+    df_min_factor=10,
+    df_max_factor=100,
+):
+    while True:
+
+        N = np.random.randint(N_min, N_max + 1)
+        T = np.random.randint(T_min, T_max + 1)
+
+        # --------------- use inverse wishart to sample true covariance ----------------
+
+        df = np.random.randint(
+            df_min_factor * (N + 2), df_max_factor * N, size=batch_size
+        )  # degrees of freedom for invwishart
+
+        Sigma_true = np.stack(
+            [st.invwishart.rvs(df=d, scale=np.eye(N)) * (d - N - 1) for d in df],
+            axis=0,
+        )
+
+        Sigma_true = tf.convert_to_tensor(Sigma_true, dtype=tf.float64)
+
+        # We don't center nor normalize since I think it is unnecessary here
+
+        # -------------------- Simulate T samples, vectorized ---------------------------
+
+        Z = tf.random.normal((batch_size, T, N), dtype=tf.float64)
+
+        L = tf.linalg.cholesky(Sigma_true)  # (B, N, N)
+
+        R = tf.matmul(L, tf.transpose(Z, perm=[0, 2, 1]))  # (B, N, T)
+
+        # Empirical covariance
+        R_hat, _, mask = tf_make_random_pattern_vecto(
+            R, missing_constant
+        )  # (B, N, T), (B, N), (B, N, T)
+
+        Sigma_hat = tf_cov_pairwise(R_hat)  # (B, N, N)
+        Sigma_hat_diag = tf.linalg.diag_part(Sigma_hat)
+
+        # By definition Sigma_hat is symetric but numericaly it can be asymmetric at ~1e-12 level for instance, the lines prevent it
+        Sigma_hat = 0.5 * (Sigma_hat + tf.transpose(Sigma_hat, perm=[0, 2, 1]))
+
+        eps = 1e-6
+        diag_hat = tf.linalg.diag_part(Sigma_hat)
+        std_pred = tf.sqrt(tf.maximum(diag_hat, eps))
+
+        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None] + eps)
+
+        corr_hat = 0.5 * (corr_hat + tf.transpose(corr_hat, perm=[0, 2, 1]))
+
+        jitter = 1e-8
+        corr_hat = corr_hat + jitter * tf.eye(
+            N, batch_shape=[batch_size], dtype=tf.float64
+        )
+
+        eigvals, eigvecs = tf.linalg.eigh(
+            corr_hat
+        )  # eigh because always symetric by construction
+
+        eigvals = tf.cast(eigvals, tf.float32)
+        eigvecs = tf.cast(eigvecs, tf.float32)
+
+        lam_emp = tf.reverse(eigvals, axis=[1])
+        lam_emp = tf.expand_dims(lam_emp, axis=-1)  # (B, N, 1)
+
+        Q_emp = tf.reverse(eigvecs, axis=[2])  # (B, N, N)
+
+        Tmin = tf.cast(tf.argmax(tf.cast(mask, tf.float32), axis=2), tf.float32)
+        Tmin = tf.expand_dims(Tmin, axis=-1)  # (B, N, 1)
+
+        Tmax = tf.cast(
+            tf.argmax(tf.cast(tf.reverse(mask, axis=[2]), tf.float32), axis=2),
+            tf.float32,
+        )
+        Tmax = tf.expand_dims(Tmax, axis=-1)  # (B, N, 1)
+
+        Q_sq = tf.square(tf.transpose(Q_emp, perm=[0, 2, 1]))
+
+        Tmin_mean = tf.matmul(Q_sq, Tmin)
+        Tmax_mean = tf.matmul(Q_sq, Tmax)
+
+        # ----------------------------------- Prepare Batch --------------------------------------
+
+        # Build conditioning scalars
+        T_vec = tf.fill((batch_size, N, 1), tf.cast(T, tf.float32))
+        N_vec = tf.fill((batch_size, N, 1), tf.cast(N, tf.float32))
+
+        # Build input sequence to the GRU
+        input_seq = tf.concat(
+            [lam_emp, N_vec, T_vec, N_vec / T_vec, Tmin_mean, Tmax_mean],
+            axis=-1,
+        )
+
+        yield input_seq, Q_emp, Sigma_true, T, Sigma_hat_diag, R
 
 
 # generator of the data with market data
@@ -126,9 +241,17 @@ def data_generator_real_data(
 
         # Empirical covariance
         Sigma_hat = torch_cov_pairwise(R_hat)
+        Sigma_hat_diag = torch.diagonal(Sigma_hat, dim1=1, dim2=2)
 
         # ----------------- Compute eigVals, EigVector and important Times  ----------------------
-        eigvals, eigvecs = torch.linalg.eigh(Sigma_hat)
+        eps = 1e-12
+        diag_hat = torch.diagonal(Sigma_hat, dim1=-2, dim2=-1)
+        std_pred = torch.sqrt(torch.clamp(diag_hat, min=eps))
+        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None] + eps)
+
+        eigvals, eigvecs = torch.linalg.eigh(
+            corr_hat
+        )  # eigh because always symetric by construction
 
         lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)
         Q_emp = torch.flip(eigvecs, dims=[2])
@@ -150,9 +273,10 @@ def data_generator_real_data(
             [lam_emp, N_vec, T_vec, N_vec / T_vec, Tmin_mean, Tmax_mean], dim=-1
         )
 
-        yield input_seq, Q_emp, R_oos, T
+        yield input_seq, Q_emp, R_oos, T, Sigma_hat_diag
 
 
+# NO USED For NOW
 # data generator that yields all the data for tests
 def data_generator_2types(
     batch_size,

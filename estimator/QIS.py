@@ -141,3 +141,91 @@ def QIS_batched(sample, ddof=1):
     sigma = U @ D @ U.transpose(1, 2)
 
     return sigma  # (B, N, N)
+
+
+import tensorflow as tf
+
+
+def tf_QIS_batched(sample, ddof=1):
+    """
+    Batched QIS estimator.
+
+    sample: (B, N, T)
+    returns sigmahat: (B, N, N)
+    """
+
+    sample = tf.convert_to_tensor(sample)
+    dtype = sample.dtype
+
+    B = tf.shape(sample)[0]
+    N = tf.shape(sample)[1]
+    T = tf.shape(sample)[2]
+
+    # De-mean across time if ddof ≥ 1
+    if ddof >= 1:
+        mean = tf.reduce_mean(sample, axis=2, keepdims=True)
+        sample = sample - mean
+
+    n = tf.cast(T - ddof, dtype)
+    c = tf.cast(N, dtype) / n
+
+    # Sample covariance across time → (B, N, N)
+    S = tf.matmul(sample, sample, transpose_b=True) / n
+    S = 0.5 * (S + tf.transpose(S, perm=[0, 2, 1]))
+
+    # Eigendecomposition – batched
+    lambda1, U = tf.linalg.eigh(S)
+    lambda1 = tf.maximum(lambda1, tf.cast(0.0, dtype))
+
+    # h smoothing parameter (scalar)
+    h = tf.pow(tf.minimum(c**2, 1.0 / (c**2)), tf.cast(0.35, dtype)) / tf.pow(
+        tf.cast(N, dtype), tf.cast(0.35, dtype)
+    )
+
+    # Inverse of non-null eigenvalues
+    start = tf.maximum(1, N - tf.cast(n, tf.int32) + 1) - 1
+    invlambda = 1.0 / lambda1[:, start:]  # (B, K)
+
+    K = tf.shape(invlambda)[1]
+
+    # Lj and Lj_i matrices
+    Lj = tf.expand_dims(invlambda, 2)
+    Lj = tf.tile(Lj, [1, 1, K])
+
+    Lj_i = Lj - tf.transpose(Lj, perm=[0, 2, 1])
+
+    Lj_sq = Lj * Lj
+    denom = Lj_i * Lj_i + Lj_sq * (h**2)
+
+    theta = tf.reduce_mean(Lj * Lj_i / denom, axis=1)  # (B, K)
+    Htheta = tf.reduce_mean(Lj_sq * h / denom, axis=1)  # (B, K)
+    Atheta2 = theta**2 + Htheta**2  # (B, K)
+
+    # Shrink eigenvalues
+    if_condition = tf.less_equal(N, tf.cast(n, tf.int32))
+
+    def case_N_le_n():
+        return 1.0 / (
+            (1 - c) ** 2 * invlambda
+            + 2 * c * (1 - c) * invlambda * theta
+            + c**2 * invlambda * Atheta2
+        )
+
+    def case_N_gt_n():
+        delta0 = 1.0 / ((c - 1) * tf.reduce_mean(invlambda, axis=1, keepdims=True))
+        delta0 = tf.repeat(delta0, repeats=N - tf.cast(n, tf.int32), axis=1)
+        return tf.concat([delta0, 1.0 / (invlambda * Atheta2)], axis=1)
+
+    delta = tf.cond(if_condition, case_N_le_n, case_N_gt_n)
+
+    # Trace preservation
+    trace_lambda = tf.reduce_sum(lambda1, axis=1, keepdims=True)
+    trace_delta = tf.reduce_sum(delta, axis=1, keepdims=True)
+
+    deltaQIS = delta * (trace_lambda / trace_delta)
+
+    # Reconstruct covariance (B,N,N)
+    D = tf.linalg.diag(deltaQIS)
+    sigma = tf.matmul(tf.matmul(U, D), U, transpose_b=True)
+
+    return sigma  # (B, N, N)

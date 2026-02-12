@@ -1,14 +1,14 @@
 import torch
 import numpy as np
-from utils import reconstruct
+from utils.utils import reconstruct
 
 
 # Potters–Bouchaud loss
-def loss_function_mat(Mat_oos, Mat_pred, T):
-    B, N, _ = Mat_oos.shape
+def loss_function_mat(Mat_ref, Mat_pred, T):
+    B, N, _ = Mat_ref.shape
 
     # Matrix difference
-    Delta = Mat_pred - Mat_oos  # (B, N, N)
+    Delta = Mat_pred - Mat_ref  # (B, N, N)
 
     ## CB: It seems more efficient to compute the Frobenius norm via squaring element-wise and summing.
     # Square of the matrix (Delta^2 = Delta @ Delta) Symetric matrix so we don't need to transpose !
@@ -21,6 +21,34 @@ def loss_function_mat(Mat_oos, Mat_pred, T):
     loss_cov = torch.sqrt(trace_vals) * T / N**2  # (B,)
 
     return loss_cov.mean()  # scalar
+
+
+import tensorflow as tf
+
+
+# Potters–Bouchaud loss
+def tf_loss_function_mat(Mat_ref, Mat_pred, T):
+    B = tf.shape(Mat_ref)[0]
+    N = tf.shape(Mat_ref)[1]
+
+    # Matrix difference
+    Delta = Mat_pred - Mat_ref  # (B, N, N)
+
+    ## CB: It seems more efficient to compute the Frobenius norm via squaring element-wise and summing.
+    # Square of the matrix (Delta^2 = Delta @ Delta) Symetric matrix so we don't need to transpose !
+    Delta2 = tf.matmul(tf.transpose(Delta, perm=[0, 2, 1]), Delta)  # (B, N, N)
+
+    # Trace of Delta2 = sum of diagonal
+    trace_vals = tf.reduce_sum(tf.linalg.diag_part(Delta2), axis=1)  # (B,)
+
+    # Make sure types match
+    T = tf.cast(T, tf.float32)
+    N = tf.cast(N, tf.float32)
+
+    # Normalized Frobenius estimation error (Potters-Bouchaud)
+    loss_cov = tf.sqrt(trace_vals) * T / (N**2)  # (B,)
+
+    return tf.reduce_mean(loss_cov)  # scalar
 
 
 def log_spectrum_mse(Mat_oos, Mat_pred, T):
