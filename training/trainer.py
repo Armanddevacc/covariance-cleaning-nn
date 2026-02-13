@@ -80,13 +80,14 @@ class Trainer:
                 #   N_vec, T_vec, which are sizes of the different matrix
                 #   N_vec / T_vec, which is the ratio of ...
                 #   Tmin_mean, Tmax_mean, which are featured engeneered and supposed to help with the prediction given though some variable are missing
+
                 lam_pred = self.model(input_seq)
                 cov_pred = (
-                    torch.diag_embed(Sigma_hat_diag).float()
+                    torch.sqrt(torch.diag_embed(Sigma_hat_diag)).float()
                     @ Q_emp
                     @ torch.diag_embed(lam_pred)
                     @ Q_emp.transpose(-1, -2)
-                    @ torch.diag_embed(Sigma_hat_diag).float()
+                    @ torch.sqrt(torch.diag_embed(Sigma_hat_diag)).float()
                 )
 
                 # When we train on real data we don't have the real cov/corr matrix but we have oos data which we can use that way :

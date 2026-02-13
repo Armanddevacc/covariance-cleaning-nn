@@ -26,7 +26,8 @@ class BiGRUSpectralDenoiser(nn.Module):
         out = self.fc(h)
         out = out.squeeze(-1)
         out = self.activation(out)
-        return out
+        out = out / out.mean(dim=1, keepdim=True)
+        return out  # if you reorder at the end of the NN we need to reorder the eigenvector too otherwise it makes no sense
 
 
 """

@@ -8,7 +8,6 @@ from estimator.shaffer import (
     fit_monotone_regressions,
     reconstruct_mu_sigma_from_phi,
 )
-from models.utils import eigen_decomp
 from estimator.MLE import torch_cov_pairwise, tf_cov_pairwise
 import scipy.stats as st
 from estimator.QIS import QIS_batched
@@ -56,16 +55,17 @@ def data_generator(
         Sigma_hat = torch_cov_pairwise(R_hat).double()  # (B, N, N)
         Sigma_hat_diag = torch.diagonal(Sigma_hat, dim1=1, dim2=2)
         # By definition Sigma_hat is symetric but numericaly it can be asymmetric at ~1e-12 level for instance, the lines prevent it
-        Sigma_hat = 0.5 * (Sigma_hat + Sigma_hat.transpose(-1, -2))
+        # Sigma_hat = 0.5 * (Sigma_hat + Sigma_hat.transpose(-1, -2))
 
-        eps = 1e-6
-        diag_hat = torch.diagonal(Sigma_hat, dim1=-2, dim2=-1)
-        std_pred = torch.sqrt(torch.clamp(diag_hat, min=eps))
-        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None] + eps)
-
+        # ----------------------- Compute correlation Matrix ----------------------------
+        # eps = 1e-6
+        std_pred = torch.sqrt(Sigma_hat_diag)
+        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
         corr_hat = 0.5 * (corr_hat + corr_hat.transpose(-1, -2))
-        jitter = 1e-8
-        corr_hat = corr_hat + jitter * torch.eye(N, device=corr_hat.device)
+
+        # corr_hat = 0.5 * (corr_hat + corr_hat.transpose(-1, -2))
+        # jitter = 1e-8
+        # corr_hat = corr_hat + jitter * torch.eye(N, device=corr_hat.device)
 
         eigvals, eigvecs = torch.linalg.eigh(
             corr_hat
@@ -74,8 +74,18 @@ def data_generator(
         eigvals = eigvals.float()  # float to prepare batch
         eigvecs = eigvecs.float()
 
-        lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)  # (B, N, 1)
-        Q_emp = torch.flip(eigvecs, dims=[2])  # (B, N, N)
+        # eps = 1e-6
+
+        # Floor eigenvalues
+        # eigvals = torch.clamp(eigvals, min=eps)
+
+        # Enforce trace = N
+        # eigvals = eigvals / eigvals.mean(dim=1, keepdim=True)
+
+        lam_emp = eigvals.unsqueeze(-1)
+        Q_emp = eigvecs
+        # lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)  # (B, N, 1)
+        # Q_emp = torch.flip(eigvecs, dims=[2])  # (B, N, N)
 
         Tmin = mask.float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
         Tmax = mask.flip(dims=[2]).float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
@@ -140,9 +150,7 @@ def tf_data_generator(
         # -------------------- Simulate T samples, vectorized ---------------------------
 
         Z = tf.random.normal((batch_size, T, N), dtype=tf.float64)
-
         L = tf.linalg.cholesky(Sigma_true)  # (B, N, N)
-
         R = tf.matmul(L, tf.transpose(Z, perm=[0, 2, 1]))  # (B, N, T)
 
         # Empirical covariance
@@ -153,21 +161,14 @@ def tf_data_generator(
         Sigma_hat = tf_cov_pairwise(R_hat)  # (B, N, N)
         Sigma_hat_diag = tf.linalg.diag_part(Sigma_hat)
 
-        # By definition Sigma_hat is symetric but numericaly it can be asymmetric at ~1e-12 level for instance, the lines prevent it
-        Sigma_hat = 0.5 * (Sigma_hat + tf.transpose(Sigma_hat, perm=[0, 2, 1]))
+        std_pred = tf.sqrt(Sigma_hat_diag)
+        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
 
-        eps = 1e-6
-        diag_hat = tf.linalg.diag_part(Sigma_hat)
-        std_pred = tf.sqrt(tf.maximum(diag_hat, eps))
-
-        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None] + eps)
-
-        corr_hat = 0.5 * (corr_hat + tf.transpose(corr_hat, perm=[0, 2, 1]))
-
-        jitter = 1e-8
-        corr_hat = corr_hat + jitter * tf.eye(
-            N, batch_shape=[batch_size], dtype=tf.float64
-        )
+        # corr_hat = 0.5 * (corr_hat + tf.transpose(corr_hat, perm=[0, 2, 1]))
+        # jitter = 1e-8
+        # corr_hat = corr_hat + jitter * tf.eye(
+        #    N, batch_shape=[batch_size], dtype=tf.float64
+        # )
 
         eigvals, eigvecs = tf.linalg.eigh(
             corr_hat
@@ -176,10 +177,8 @@ def tf_data_generator(
         eigvals = tf.cast(eigvals, tf.float32)
         eigvecs = tf.cast(eigvecs, tf.float32)
 
-        lam_emp = tf.reverse(eigvals, axis=[1])
         lam_emp = tf.expand_dims(lam_emp, axis=-1)  # (B, N, 1)
-
-        Q_emp = tf.reverse(eigvecs, axis=[2])  # (B, N, N)
+        Q_emp = eigvecs  # (B, N, N)
 
         Tmin = tf.cast(tf.argmax(tf.cast(mask, tf.float32), axis=2), tf.float32)
         Tmin = tf.expand_dims(Tmin, axis=-1)  # (B, N, 1)
