@@ -236,12 +236,12 @@ class Trainer_tf:
                     D_sigma = tf.linalg.diag(Sigma_hat_diag)
                     D_lam = tf.linalg.diag(lam_pred)
 
-                    cov_pred = (
-                        D_sigma
-                        @ Q_emp
-                        @ D_lam
-                        @ tf.transpose(Q_emp, perm=[0, 2, 1])
-                        @ D_sigma
+                    cov_pred = tf.matmul(
+                        tf.matmul(
+                            tf.matmul(tf.matmul(D_sigma, Q_emp), D_lam),
+                            tf.transpose(Q_emp, perm=[0, 2, 1]),
+                        ),
+                        D_sigma,
                     )
 
                     # When we train on real data we don't have the real cov/corr matrix but we have oos data which we can use that way :

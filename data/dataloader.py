@@ -163,8 +163,8 @@ def tf_data_generator(
 
         std_pred = tf.sqrt(Sigma_hat_diag)
         corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
+        corr_hat = 0.5 * (corr_hat + tf.transpose(corr_hat, perm=[0, 2, 1]))
 
-        # corr_hat = 0.5 * (corr_hat + tf.transpose(corr_hat, perm=[0, 2, 1]))
         # jitter = 1e-8
         # corr_hat = corr_hat + jitter * tf.eye(
         #    N, batch_shape=[batch_size], dtype=tf.float64
@@ -177,7 +177,7 @@ def tf_data_generator(
         eigvals = tf.cast(eigvals, tf.float32)
         eigvecs = tf.cast(eigvecs, tf.float32)
 
-        lam_emp = tf.expand_dims(lam_emp, axis=-1)  # (B, N, 1)
+        lam_emp = tf.expand_dims(eigvals, axis=-1)
         Q_emp = eigvecs  # (B, N, N)
 
         Tmin = tf.cast(tf.argmax(tf.cast(mask, tf.float32), axis=2), tf.float32)
