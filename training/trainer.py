@@ -182,11 +182,12 @@ class Trainer_tf:
             )
 
         # --------- FORCE MODEL BUILD (VERY IMPORTANT) ----------
+        # Because in TF, variables are created lazily on first forward pass
         input_seq, *_ = next(generator)
         input_seq = tf.cast(input_seq, tf.float32)
         _ = self.model(input_seq, training=True)
 
-        # Re-create generator because we consumed one batch
+        # Re-create generator because we consumed one batch just before
         if not self.is_train_on_real_data:
             generator = self.data_generator(
                 self.batch_size,
@@ -209,21 +210,24 @@ class Trainer_tf:
 
         for epoch in range(self.epochs):
 
-            # TensorFlow does not need model.train()
-            vars_ = self.model.trainable_variables
+            vars_ = (
+                self.model.trainable_variables
+            )  # will compute gradients w.r.t. these variables
             accum_grads = [tf.zeros_like(v) for v in vars_]
+
+            epoch_loss = 0
 
             for _ in range(self.accumulate_steps):
                 input_seq, Q_emp, Mat_oos, T, Sigma_hat_diag, _ = next(generator)
 
-                # Convert numpy → tensors if needed
+                # Convert numpy to tensors
                 input_seq = tf.cast(input_seq, dtype=tf.float32)
                 Q_emp = tf.cast(Q_emp, dtype=tf.float32)
                 Mat_oos = tf.cast(Mat_oos, dtype=tf.float32)
                 Sigma_hat_diag = tf.cast(Sigma_hat_diag, dtype=tf.float32)
                 T = tf.cast(T, tf.float32)
 
-                with tf.GradientTape() as tape:
+                with tf.GradientTape() as tape:  # the tape will record operations for AAD (important to reinitiate it after each step of accumulation)
 
                     # Forward through the network to estimate corr matrix eigenvalues
                     # In the input_seq we pass :
@@ -244,6 +248,7 @@ class Trainer_tf:
                         D_sigma,
                     )
 
+                    # for later use
                     # When we train on real data we don't have the real cov/corr matrix but we have oos data which we can use that way :
                     if self.is_train_on_real_data:
                         # in that case Mat_oos was oos return on 10 days; thanks to them we compute the covariance matrix of the assets
@@ -256,25 +261,29 @@ class Trainer_tf:
                     # corr_oos = Mat_oos / (std_oos[:, None, :] * std_oos[:, :, None] + eps)
 
                     # at the end of the day we want the loss between covariance to be small so it is our loss criterion
-                    loss = self.loss_function(Mat_oos, cov_pred, T)
+                    loss = self.loss_function(
+                        Mat_oos, cov_pred, T
+                    )  # call bouchaud loss
                     loss_scaled = loss / float(self.accumulate_steps)
 
+                    epoch_loss += float(loss)
+
                 grads = tape.gradient(loss_scaled, vars_)
+                # handling of None gradients
                 accum_grads = [
                     ag + (g if g is not None else tf.zeros_like(v))
                     for ag, g, v in zip(accum_grads, grads, vars_)
                 ]
 
-            # Equivalent to nn.utils.clip_grad_norm_(..., max_norm=1.0)
             clipped_grads, _ = tf.clip_by_global_norm(accum_grads, 1.0)
             self.optimizer.apply_gradients(zip(clipped_grads, vars_))
 
-            self.loss_history.append(float(loss.numpy()))
+            self.loss_history.append(epoch_loss / self.accumulate_steps)
 
             # logging
             if (epoch + 1) % self.log_interval == 0:
                 print(
-                    f"Epoch {epoch+1}/{self.epochs} — loss: {float(loss.numpy()):.8f}"
+                    f"Epoch {epoch+1}/{self.epochs} — loss: {epoch_loss / self.accumulate_steps:.8f}"
                 )
 
         print("Training complete.")

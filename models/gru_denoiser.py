@@ -73,5 +73,5 @@ class BiGRUSpectralDenoiserTensorFlow(tf.keras.Model):
         out = self.fc(h)  # (B, N, 1)
         out = tf.squeeze(out, axis=-1)  # (B, N)
         out = self.activation(out)
-        out = out / out.mean(dim=1, keepdim=True)
+        out = out / tf.reduce_mean(out, axis=1, keepdims=True)
         return out

@@ -116,7 +116,7 @@ def data_generator(
 import tensorflow as tf
 
 
-# generator of the data as suggested by Prof B
+# generator of the data as suggested by Prof B but in tensorflow
 def tf_data_generator(
     batch_size,
     missing_constant,  # >= 1, 1 being no missingness
@@ -145,8 +145,6 @@ def tf_data_generator(
 
         Sigma_true = tf.convert_to_tensor(Sigma_true, dtype=tf.float64)
 
-        # We don't center nor normalize since I think it is unnecessary here
-
         # -------------------- Simulate T samples, vectorized ---------------------------
 
         Z = tf.random.normal((batch_size, T, N), dtype=tf.float64)
@@ -159,26 +157,34 @@ def tf_data_generator(
         )  # (B, N, T), (B, N), (B, N, T)
 
         Sigma_hat = tf_cov_pairwise(R_hat)  # (B, N, N)
-        Sigma_hat_diag = tf.linalg.diag_part(Sigma_hat)
 
+        # -------------------- Compute correlation Matrix ----------------------------
+
+        Sigma_hat_diag = tf.linalg.diag_part(Sigma_hat)
         std_pred = tf.sqrt(Sigma_hat_diag)
         corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
+
+        # We increase symmetry numerically to prevent issues with eigen decomposition, it can be asymmetric at ~1e-12 level for instance
+        # We have to do it because sometimes in the trainer the matrix was ill-conditioned, not allowing usage of eigh
         corr_hat = 0.5 * (corr_hat + tf.transpose(corr_hat, perm=[0, 2, 1]))
 
+        # other way to increase symmetry numerically : (not used for now as it was not needed)
         # jitter = 1e-8
         # corr_hat = corr_hat + jitter * tf.eye(
         #    N, batch_shape=[batch_size], dtype=tf.float64
         # )
 
-        eigvals, eigvecs = tf.linalg.eigh(
-            corr_hat
-        )  # eigh because always symetric by construction
+        # eigh because always symetric by construction
+        eigvals, eigvecs = tf.linalg.eigh(corr_hat)
 
+        # everything was in 64 bit before but switch to 32 for now (remaining part of pipeline is in 32)
         eigvals = tf.cast(eigvals, tf.float32)
         eigvecs = tf.cast(eigvecs, tf.float32)
 
-        lam_emp = tf.expand_dims(eigvals, axis=-1)
+        lam_emp = tf.expand_dims(eigvals, axis=-1)  # (B, N, 1)
         Q_emp = eigvecs  # (B, N, N)
+
+        # ---------------- Feature engineering to try to absorb missingness pattern ---------------
 
         Tmin = tf.cast(tf.argmax(tf.cast(mask, tf.float32), axis=2), tf.float32)
         Tmin = tf.expand_dims(Tmin, axis=-1)  # (B, N, 1)
