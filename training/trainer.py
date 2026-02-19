@@ -246,7 +246,7 @@ class Trainer_tf:
                             tf.transpose(Q_emp, perm=[0, 2, 1]),
                         ),
                         D_sigma,
-                    )
+                    )  # compute loss on correlation
 
                     # for later use
                     # When we train on real data we don't have the real cov/corr matrix but we have oos data which we can use that way :

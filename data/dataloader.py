@@ -143,7 +143,7 @@ def tf_data_generator(
             axis=0,
         )
 
-        Sigma_true = tf.convert_to_tensor(Sigma_true, dtype=tf.float64)
+        Sigma_true = tf.convert_to_tensor(Sigma_true, dtype=tf.float64)  # on average 1
 
         # -------------------- Simulate T samples, vectorized ---------------------------
 
@@ -212,7 +212,7 @@ def tf_data_generator(
             axis=-1,
         )
 
-        yield input_seq, Q_emp, Sigma_true, T, Sigma_hat_diag, R
+        yield input_seq, Q_emp, Sigma_true, T, Sigma_hat_diag, R_hat
 
 
 # generator of the data with market data

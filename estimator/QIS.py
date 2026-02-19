@@ -75,6 +75,77 @@ def QIS(Sample, ddof=1):
     return sigmahat
 
 
+import numpy as np
+
+
+def QIS_batched_numpy(Sample, ddof=1):
+    """
+    Quadratic-Inverse Shrinkage batched version.
+    Sample: (B, N, T)
+    Returns: (B, N, N)
+    """
+
+    B, N, T = Sample.shape
+
+    if ddof >= 1:
+        Sample = Sample - Sample.mean(axis=2, keepdims=True)
+
+    n = T - ddof
+    p = N
+    c = p / n
+
+    # Sample covariance (B,N,N)
+    sample = Sample @ Sample.transpose(0, 2, 1) / n
+    sample = 0.5 * (sample + sample.transpose(0, 2, 1))
+
+    # Eigen decomposition (batched)
+    lambda1, u = np.linalg.eigh(sample)
+    lambda1 = np.clip(lambda1.real, 0, None)
+
+    # Smoothing parameter
+    h = (min(c**2, 1 / c**2) ** 0.35) / p**0.35
+
+    # Non-null eigenvalues
+    start = max(1, p - n + 1) - 1
+    invlambda = 1.0 / lambda1[:, start:p]  # (B, m)
+
+    m = invlambda.shape[1]
+
+    # Build Lj and Lj_i batched
+    Lj = np.repeat(invlambda[:, :, None], m, axis=2)
+    Lj_i = Lj - Lj.transpose(0, 2, 1)
+
+    Lj_squared = Lj * Lj
+
+    theta = np.mean(Lj * Lj_i / (Lj_i**2 + Lj_squared * h**2), axis=1)
+
+    Htheta = np.mean(Lj_squared * h / (Lj_i**2 + Lj_squared * h**2), axis=1)
+
+    Atheta2 = theta**2 + Htheta**2
+
+    if p <= n:
+        delta = 1.0 / (
+            (1 - c) ** 2 * invlambda
+            + 2 * c * (1 - c) * invlambda * theta
+            + c**2 * invlambda * Atheta2
+        )
+    else:
+        delta0 = 1.0 / ((c - 1) * np.mean(invlambda, axis=1, keepdims=True))
+        delta = np.concatenate(
+            (np.repeat(delta0, p - n, axis=1), 1.0 / (invlambda * Atheta2)), axis=1
+        )
+
+    # Preserve trace
+    deltaQIS = delta * (
+        lambda1.sum(axis=1, keepdims=True) / delta.sum(axis=1, keepdims=True)
+    )
+
+    # Reconstruct covariance
+    sigmahat = u @ (deltaQIS[:, :, None] * u.transpose(0, 2, 1))
+
+    return sigmahat
+
+
 def QIS_batched(sample, ddof=1):
     """
     Batched QIS estimator.
