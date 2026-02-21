@@ -124,8 +124,8 @@ def tf_data_generator(
     N_max=300,
     T_min=50,
     T_max=300,
-    df_min_factor=10,
-    df_max_factor=100,
+    df_min_factor=1.5,
+    df_max_factor=3,
 ):
     while True:
 
@@ -135,7 +135,7 @@ def tf_data_generator(
         # --------------- use inverse wishart to sample true covariance ----------------
 
         df = np.random.randint(
-            df_min_factor * (N + 2), df_max_factor * N, size=batch_size
+            int(df_min_factor * (N + 2)), int(df_max_factor * N), size=batch_size
         )  # degrees of freedom for invwishart
 
         Sigma_true = np.stack(
