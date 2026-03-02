@@ -18,7 +18,7 @@ def loss_function_mat(Mat_ref, Mat_pred, T):
     trace_vals = Delta2.diagonal(dim1=1, dim2=2).sum(dim=1)  # (B,)
 
     # Normalized Frobenius estimation error (Potters-Bouchaud)
-    loss_cov = torch.sqrt(trace_vals) * T / N**2  # (B,)
+    loss_cov = torch.sqrt(trace_vals / N)  # (B,)
 
     return loss_cov.mean()  # scalar
 
@@ -46,7 +46,10 @@ def tf_loss_function_mat(Mat_ref, Mat_pred, T):
     N = tf.cast(N, tf.float32)
 
     # Normalized Frobenius estimation error (Potters-Bouchaud)
-    loss_cov = tf.sqrt(trace_vals) * T / (N**2)  # (B,)
+    # loss_cov = tf.sqrt(trace_vals) * np.sqrt(T) / (N)  # (B,)
+
+    # scaled frob -> used for QIS in LW 2015 and 2020
+    loss_cov = tf.sqrt(trace_vals) / (N)  # (B,)
 
     return tf.reduce_mean(loss_cov)  # scalar
 

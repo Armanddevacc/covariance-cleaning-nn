@@ -20,6 +20,7 @@ def accumulate_loss(
     N_min,
     N_max,
     data_gen,
+    loss_function,
     batch_size_oos=25,
 ):
     frob_corr_loss = np.empty(shape=(accumulate_step, 4))
@@ -107,11 +108,19 @@ def accumulate_loss(
             std_oos_no_miss[:, None, :] * std_oos_no_miss[:, :, None] + 1e-12
         )
 
+        Corr_pred_miss = tf.cast(Corr_pred_miss, tf.float32)
+        Corr_pred_no_miss = tf.cast(Corr_pred_no_miss, tf.float32)
+        Corr_emp_miss = tf.cast(Corr_emp_miss, tf.float32)
+        Corr_emp_no_miss = tf.cast(Corr_emp_no_miss, tf.float32)
+
+        Corr_true_miss = tf.cast(Corr_true_miss, tf.float32)
+        Corr_true_no_miss = tf.cast(Corr_true_no_miss, tf.float32)
+
         # compute the frob loss
-        fro_Corr_pred_miss = frobenius_mean(Corr_pred_miss, Corr_true_miss)
-        fro_Corr_pred_no_miss = frobenius_mean(Corr_pred_no_miss, Corr_true_no_miss)
-        fro_Corr_emp_miss = frobenius_mean(Corr_emp_miss, Corr_true_miss)
-        fro_Corr_emp_no_miss = frobenius_mean(Corr_emp_no_miss, Corr_true_no_miss)
+        fro_Corr_pred_miss = loss_function(Corr_pred_miss, Corr_true_miss, T)
+        fro_Corr_pred_no_miss = loss_function(Corr_pred_no_miss, Corr_true_no_miss, T)
+        fro_Corr_emp_miss = loss_function(Corr_emp_miss, Corr_true_miss, T)
+        fro_Corr_emp_no_miss = loss_function(Corr_emp_no_miss, Corr_true_no_miss, T)
 
         frob_corr_loss[step, :] = [
             fro_Corr_pred_miss,
@@ -123,11 +132,6 @@ def accumulate_loss(
         D_miss = tf.cast(tf.sqrt(tf.linalg.diag(Sigma_hat_diag_miss)), tf.float32)
         D_no_miss = tf.cast(tf.sqrt(tf.linalg.diag(Sigma_hat_diag_no_miss)), tf.float32)
 
-        Corr_pred_miss = tf.cast(Corr_pred_miss, tf.float32)
-        Corr_pred_no_miss = tf.cast(Corr_pred_no_miss, tf.float32)
-        Corr_emp_miss = tf.cast(Corr_emp_miss, tf.float32)
-        Corr_emp_no_miss = tf.cast(Corr_emp_no_miss, tf.float32)
-
         Sigma_pred_miss = tf.matmul(tf.matmul(D_miss, Corr_pred_miss), D_miss)
         Sigma_pred_no_miss = tf.matmul(
             tf.matmul(D_no_miss, Corr_pred_no_miss), D_no_miss
@@ -136,11 +140,17 @@ def accumulate_loss(
         Sigma_emp_no_miss = tf.matmul(tf.matmul(D_no_miss, Corr_emp_no_miss), D_no_miss)
         Sigma_QIS = tf_QIS_batched(R_miss[:, :, -born:])
 
-        fro_Sigma_pred_miss = frobenius_mean(Sigma_pred_miss, Sigma_true_miss)
-        fro_Sigma_pred_no_miss = frobenius_mean(Sigma_pred_no_miss, Sigma_true_no_miss)
-        fro_Sigma_emp_miss = frobenius_mean(Sigma_emp_miss, Sigma_true_miss)
-        fro_Sigma_emp_no_miss = frobenius_mean(Sigma_emp_no_miss, Sigma_true_no_miss)
-        fro_Sigma_QIS = frobenius_mean(Sigma_QIS, Sigma_true_miss)
+        Sigma_true_miss = tf.cast(Sigma_true_miss, tf.float32)
+        Sigma_true_no_miss = tf.cast(Sigma_true_no_miss, tf.float32)
+        Sigma_QIS = tf.cast(Sigma_QIS, tf.float32)
+
+        fro_Sigma_pred_miss = loss_function(Sigma_pred_miss, Sigma_true_miss, T)
+        fro_Sigma_pred_no_miss = loss_function(
+            Sigma_pred_no_miss, Sigma_true_no_miss, T
+        )
+        fro_Sigma_emp_miss = loss_function(Sigma_emp_miss, Sigma_true_miss, T)
+        fro_Sigma_emp_no_miss = loss_function(Sigma_emp_no_miss, Sigma_true_no_miss, T)
+        fro_Sigma_QIS = loss_function(Sigma_QIS, Sigma_true_miss, T)
 
         frob_cov_loss[step, :] = [
             fro_Sigma_pred_miss,
