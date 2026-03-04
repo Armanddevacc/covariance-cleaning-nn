@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from data.dataloader import tf_data_generator
 from models.gru_denoiser import BiGRUSpectralDenoiserTensorFlow
-from training.trainer import Trainer_tf_remake
+from training.trainer import Trainer_tf
 
 
 mse = nn.MSELoss()
@@ -18,7 +18,7 @@ model_generated_data = BiGRUSpectralDenoiserTensorFlow(
     hidden_size=96
 )  # hidden_size to be tunned
 # lr, weight_decay, batch_size, epochs, hidden_size to be tunned
-trainer = Trainer_tf_remake(
+trainer = Trainer_tf(
     model_generated_data,
     tf_data_generator,
     batch_size,
