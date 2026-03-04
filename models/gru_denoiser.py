@@ -30,30 +30,6 @@ class BiGRUSpectralDenoiser(nn.Module):
         return out  # if you reorder at the end of the NN we need to reorder the eigenvector too otherwise it makes no sense
 
 
-"""
-    def forward(self, input_seq, eps=1e-8):
-
-        B, N, _ = input_seq.shape
-        # lam_emp = input_seq[:, :, 0].detach()
-
-        h, _ = self.gru(input_seq)  # (B, N, 2H)
-        logg = self.fc(h).squeeze(-1)  # (B, N)
-
-        # positive gaps
-        g = self.activation(logg) + eps  # (B, N)
-
-        # decreasing spectrum via reversed cumsum:
-        # lam_i = sum_{k=i..N} g_k
-        lam = torch.flip(
-            torch.cumsum(torch.flip(g, dims=[1]), dim=1), dims=[1]
-        )  # (B, N)
-
-        # trace constraint
-        lam = lam * (N / (lam.sum(dim=1, keepdim=True) + eps))
-
-        return lam
-"""
-
 import tensorflow as tf
 
 
