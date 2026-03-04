@@ -132,8 +132,8 @@ class Trainer_tf:
         missing_constant,
         N_min,
         N_max,
-        T_min,
-        T_max,
+        q_min,
+        q_max,
     ):
         self.model = model
         self.epochs = epochs
@@ -142,8 +142,8 @@ class Trainer_tf:
         self.missing_constant = missing_constant
         self.N_min = N_min
         self.N_max = N_max
-        self.T_min = T_min
-        self.T_max = T_max
+        self.q_min = q_min
+        self.q_max = q_max
         # first we need an optimizer :
         self.optimizer = tf.keras.optimizers.Adam(1e-4)
         # we need a loss function
@@ -154,8 +154,8 @@ class Trainer_tf:
             self.missing_constant,
             self.N_min,
             self.N_max,
-            self.T_min,
-            self.T_max,
+            self.q_min,
+            self.q_max,
         )
         # save loss over time
         self.loss_history = []

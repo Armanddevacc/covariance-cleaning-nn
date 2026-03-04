@@ -68,7 +68,13 @@ class BiGRUSpectralDenoiserTensorFlow(tf.keras.Model):
         self.activation = tf.keras.layers.Activation("softplus")
 
     def call(self, x):
-        # x shape: (B, N, 6)
+        # x shape: (B, N, 5)
+        # In the input_seq we pass :
+        #   the eigenvalues of a corr matrix which has Q_emp*Sigma_hat_diag as transition matrix (to cov)
+        #   N_vec, T_vec, which are sizes of the different matrix
+        #   N_vec / T_vec, which is the ratio of ...
+        #   Tmin_mean, Tmax_mean, which are featured engeneered and supposed to help with the prediction given though some variable are missing
+
         h = self.bigru(x)  # (B, N, 2H)
         out = self.fc(h)  # (B, N, 1)
         out = tf.squeeze(out, axis=-1)  # (B, N)

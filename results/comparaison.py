@@ -15,8 +15,8 @@ def frobenius_mean(A, B):
 def accumulate_loss(
     model_generated_data,
     accumulate_step,
-    T_min,
-    T_max,
+    q_min,
+    q_max,
     N_min,
     N_max,
     data_gen,
@@ -40,8 +40,8 @@ def accumulate_loss(
                 missing_constant=2,
                 N_min=N_min,
                 N_max=N_max,
-                T_min=T_min,
-                T_max=T_max,
+                q_min=q_min,
+                q_max=q_max,
             )
         )
         (
@@ -57,8 +57,8 @@ def accumulate_loss(
                 missing_constant=1,
                 N_min=N_min,
                 N_max=N_max,
-                T_min=T_min,
-                T_max=T_max,
+                q_min=q_min,
+                q_max=q_max,
             )
         )
 

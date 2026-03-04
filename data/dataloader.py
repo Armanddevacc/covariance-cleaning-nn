@@ -122,15 +122,22 @@ def tf_data_generator(
     missing_constant,  # >= 1, 1 being no missingness
     N_min=20,
     N_max=300,
-    T_min=50,
-    T_max=300,
+    # T_min=50,
+    # T_max=300,
+    q_min=0.1,
+    q_max=2,
     df_min_factor=1.5,
     df_max_factor=3,
 ):
     while True:
 
         N = np.random.randint(N_min, N_max + 1)
-        T = np.random.randint(T_min, T_max + 1)
+
+        u = np.random.uniform(0, 1)
+        # to draw more big q than small q
+        q = q_min + (q_max - q_min) * u**0.5
+
+        T = int(N / q)
 
         # --------------- use inverse wishart to sample true covariance ----------------
 
@@ -185,20 +192,26 @@ def tf_data_generator(
         Q_emp = eigvecs  # (B, N, N)
 
         # ---------------- Feature engineering to try to absorb missingness pattern ---------------
-
-        Tmin = tf.cast(tf.argmax(tf.cast(mask, tf.float32), axis=2), tf.float32)
-        Tmin = tf.expand_dims(Tmin, axis=-1)  # (B, N, 1)
-
-        Tmax = tf.cast(
-            tf.argmax(tf.cast(tf.reverse(mask, axis=[2]), tf.float32), axis=2),
-            tf.float32,
-        )
-        Tmax = tf.expand_dims(Tmax, axis=-1)  # (B, N, 1)
+        pos = tf.linspace(0.0, 1.0, N)  # (N,)
+        pos = tf.reshape(pos, (1, N, 1))  # (1,N,1)
+        pos = tf.tile(pos, [batch_size, 1, 1])  # (B,N,1)
 
         Q_sq = tf.square(tf.transpose(Q_emp, perm=[0, 2, 1]))
 
-        Tmin_mean = tf.matmul(Q_sq, Tmin)
-        Tmax_mean = tf.matmul(Q_sq, Tmax)
+        Tmin = tf.cast(tf.argmax(mask, axis=2, output_type=tf.int32), tf.float32)
+        Tmin = Tmin / tf.cast(T, tf.float32)
+        Tmin = tf.expand_dims(Tmin, axis=-1)  # (B, N, 1)
+        Tminmean = tf.matmul(Q_sq, Tmin)
+
+        Tmax = tf.cast(
+            tf.shape(mask)[2]
+            - 1
+            - tf.argmax(tf.reverse(mask, axis=[2]), axis=2, output_type=tf.int32),
+            tf.float32,
+        )
+        Tmax = Tmax / tf.cast(T, tf.float32)
+        Tmax = tf.expand_dims(Tmax, axis=-1)  # (B, N, 1)
+        Tmaxmean = tf.matmul(Q_sq, Tmax)
 
         # ----------------------------------- Prepare Batch --------------------------------------
 
@@ -208,7 +221,13 @@ def tf_data_generator(
 
         # Build input sequence to the GRU
         input_seq = tf.concat(
-            [lam_emp, N_vec, T_vec, N_vec / T_vec, Tmin_mean, Tmax_mean],
+            [
+                lam_emp,
+                pos,
+                N_vec / T_vec,
+                Tminmean,
+                Tmaxmean,
+            ],  # , N_vec, T_vec, Tmin, Tmax
             axis=-1,
         )
 
