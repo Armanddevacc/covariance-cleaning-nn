@@ -278,10 +278,8 @@ def real_data_producer(
 
             # Returns In-sample
             returns_in_raw = historicalData[time_indices_in, selected_stocks[..., None]]
-            if np.isnan(returns_in_raw).any():
-                continue  # skip this iteration
             nan_in = np.isnan(returns_in_raw)
-            # returns_in = np.where(nan_in, 0.0, returns_in_raw) no keep it nan it is how the network realise
+            returns_in = np.where(nan_in, 0.0, returns_in_raw)
 
             # Returns Out-of-sample
             returns_out_raw = historicalData[
@@ -290,9 +288,11 @@ def real_data_producer(
             nan_out = np.isnan(returns_out_raw)
             returns_out = np.where(nan_out, 0.0, returns_out_raw)
 
-            yield (st.zscore(returns_in_raw, axis=-1), nan_in), st.zscore(
-                returns_out, axis=-1
-            )
+            # if the line is made of only 0s
+            z = st.zscore(returns_in, axis=-1)
+            z = np.nan_to_num(z, nan=0.0)
+
+            yield (z, nan_in), st.zscore(returns_out, axis=-1)
 
     if return_generator:
         return data_generator(no_miss)

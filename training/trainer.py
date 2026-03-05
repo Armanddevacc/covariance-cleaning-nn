@@ -114,7 +114,6 @@ class Trainer:
 
 
 import tensorflow as tf
-from estimator.MLE import tf_cov_pairwise  # to be used when out of sample data
 from models.losses import tf_loss_function_mat
 
 

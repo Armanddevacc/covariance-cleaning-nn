@@ -133,9 +133,10 @@ def tf_data_generator(
 
         N = np.random.randint(N_min, N_max + 1)
 
-        u = np.random.uniform(0, 1)
+        # u = np.random.uniform(0, 1)
         # to draw more big q than small q
-        q = q_min + (q_max - q_min) * u**0.5
+        # q = q_min + (q_max - q_min) * u**0.5
+        q = np.random.uniform(q_min, q_max + 1)
 
         T = int(N / q)
 
