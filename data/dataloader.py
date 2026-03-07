@@ -193,6 +193,7 @@ def tf_data_generator(
         Q_emp = eigvecs  # (B, N, N)
 
         # ---------------- Feature engineering to try to absorb missingness pattern ---------------
+        # positional feature so the NN knows where it is in the spectrum
         pos = tf.linspace(0.0, 1.0, N)  # (N,)
         pos = tf.reshape(pos, (1, N, 1))  # (1,N,1)
         pos = tf.tile(pos, [batch_size, 1, 1])  # (B,N,1)
@@ -233,69 +234,3 @@ def tf_data_generator(
         )
 
         yield input_seq, Q_emp, Sigma_true, T, Sigma_hat_diag, R_hat
-
-
-# generator of the data with market data
-def data_generator_real_data(
-    missing_constant,  # >= 1, 1 being no missingness
-    N_min=20,
-    N_max=300,
-    T_min=50,
-    T_max=300,
-    dataset=None,
-):
-    while True:
-        N = np.random.randint(N_min, N_max + 1)  # defined in dataset gen
-        T = np.random.randint(T_min, T_max + 1)
-
-        # --------------------------- Import market data  ----------------------------------------
-
-        (rin_tf, mask_tf), R_miss_tf = next(iter(dataset))
-        assert mask_tf.numpy().shape[2] >= T
-        assert mask_tf.numpy().shape[1] >= N
-
-        idx = np.random.choice(rin_tf.numpy().shape[1], size=N, replace=False)
-        rin_tf = rin_tf.numpy()[:, idx, mask_tf.numpy().shape[2] - T :]
-        R = torch.from_numpy(rin_tf)
-        mask = torch.from_numpy(mask_tf.numpy()[:, idx, mask_tf.numpy().shape[2] - T :])
-        R_oos = torch.from_numpy(R_miss_tf.numpy()[:, idx, :])
-
-        # -------------------- Add NaNs and sample covariance Matrix  ---------------------------
-
-        R_hat, _, mask = make_random_pattern_vecto(R, missing_constant)
-
-        # Empirical covariance
-        Sigma_hat = torch_cov_pairwise(R_hat)
-        Sigma_hat_diag = torch.diagonal(Sigma_hat, dim1=1, dim2=2)
-
-        # ----------------- Compute eigVals, EigVector and important Times  ----------------------
-        eps = 1e-12
-        diag_hat = torch.diagonal(Sigma_hat, dim1=-2, dim2=-1)
-        std_pred = torch.sqrt(torch.clamp(diag_hat, min=eps))
-        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None] + eps)
-
-        eigvals, eigvecs = torch.linalg.eigh(
-            corr_hat
-        )  # eigh because always symetric by construction
-
-        lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)
-        Q_emp = torch.flip(eigvecs, dims=[2])
-
-        Tmin = mask.float().argmax(dim=2).unsqueeze(-1)
-        Tmax = mask.flip(dims=[2]).float().argmax(dim=2).unsqueeze(-1)
-
-        Tmin_mean = Q_emp.transpose(1, 2).pow(2) @ Tmin.float()
-        Tmax_mean = Q_emp.transpose(1, 2).pow(2) @ Tmax.float()
-
-        # ----------------------------------- Prepare Batch --------------------------------------
-
-        # Build conditioning scalars
-        T_vec = torch.full((lam_emp.shape[0], lam_emp.shape[1], 1), T)
-        N_vec = torch.full((lam_emp.shape[0], lam_emp.shape[1], 1), lam_emp.shape[1])
-
-        # Build input sequence to the GRU
-        input_seq = torch.cat(
-            [lam_emp, N_vec, T_vec, N_vec / T_vec, Tmin_mean, Tmax_mean], dim=-1
-        )
-
-        yield input_seq, Q_emp, R_oos, T, Sigma_hat_diag

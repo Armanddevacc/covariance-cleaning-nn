@@ -174,7 +174,7 @@ class Trainer_tf:
         return self.loss_history
 
     def _train_step(self, steps_per_epoch):
-        """ """
+        """each steps_per_epoch has its own N and T which are changing between steps_per_epoch"""
 
         with tf.GradientTape() as tape:
             loss = 0
@@ -198,6 +198,142 @@ class Trainer_tf:
         self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
 
         return loss
+
+    def _reconstruct_cov(self, lam_pred, Q_emp, Sigma_hat_diag):
+
+        Sigma_pred = tf.matmul(
+            tf.matmul(
+                tf.matmul(
+                    tf.matmul(tf.sqrt(tf.linalg.diag(Sigma_hat_diag)), Q_emp),
+                    tf.linalg.diag(lam_pred),
+                ),
+                tf.transpose(Q_emp, perm=[0, 2, 1]),
+            ),
+            tf.sqrt(tf.linalg.diag(Sigma_hat_diag)),
+        )
+        return Sigma_pred
+
+
+from estimator.MLE import tf_cov_pairwise, tf_cov_pairwise_mask
+
+
+class Trainer_real_data_tf:
+    def __init__(
+        self,
+        model,
+        dataset,  # a tf dataset we will iterate on
+        batch_size,
+        epochs,
+        # N_min,
+        # N_max,
+        # q_min,
+        # q_max,
+    ):
+        self.model = model
+        self.epochs = epochs
+        self.batch_size = batch_size
+        # self.N_min = N_min
+        # self.N_max = N_max
+        # self.q_min = q_min
+        # self.q_max = q_max
+        self.optimizer = tf.keras.optimizers.Adam(1e-4)
+        self.loss_function = tf_loss_function_mat
+        self.dataset = dataset
+        self.loss_history = []
+
+    def train(self, step_per_epoch):
+        for epoch in range(self.epochs):
+            loss = self._train_set(step_per_epoch)
+            self.loss_history.append(loss)
+            print(f"Epoch {epoch+1}, Loss: {loss:.6f}")
+        return self.loss_history
+
+    def _train_set(self, steps_per_epoch):
+        with tf.GradientTape() as tape:
+            loss = 0
+            for step, ((rin, mask), rout) in enumerate(self.dataset):
+                # input_seq, Q_emp, Sigma_true, T, Sigma_hat_diag, R_hat = next(
+                #    self.data_generator
+                # )
+                Sigma_true = tf_cov_pairwise(rout)
+
+                input_seq, Q_emp, Sigma_hat_diag, T = self._construct_input_seq(
+                    rin, mask
+                )
+                Q_emp = tf.cast(Q_emp, tf.float32)
+                Sigma_hat_diag = tf.cast(Sigma_hat_diag, tf.float32)
+                Sigma_true = tf.cast(Sigma_true, tf.float32)
+
+                # input_seq, containts Sigma_emp: (B, N, T)
+                lam_pred = self.model(input_seq, training=True)
+
+                # lam_pred: (B, N)
+                Sigma_pred = self._reconstruct_cov(lam_pred, Q_emp, Sigma_hat_diag)
+
+                loss += self.loss_function(Sigma_true, Sigma_pred, T) / steps_per_epoch
+
+        grads = tape.gradient(loss, self.model.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
+
+        return loss
+
+    def _construct_input_seq(self, rin, mask):
+        B, N, T = tf.shape(rin)
+
+        Sigma_hat = tf_cov_pairwise_mask(rin, mask)
+        print("min var:", tf.reduce_min(tf.linalg.diag_part(Sigma_hat)))
+
+        Sigma_hat_diag = tf.linalg.diag_part(Sigma_hat)
+
+        std_pred = tf.sqrt(Sigma_hat_diag)
+        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
+
+        corr_hat = 0.5 * (corr_hat + tf.transpose(corr_hat, perm=[0, 2, 1]))
+
+        eigvals, eigvecs = tf.linalg.eigh(corr_hat)
+
+        eigvals = tf.cast(eigvals, tf.float32)
+        eigvecs = tf.cast(eigvecs, tf.float32)
+
+        lam_emp = tf.expand_dims(eigvals, axis=-1)
+        Q_emp = eigvecs
+
+        pos = tf.linspace(0.0, 1.0, N)
+        pos = tf.reshape(pos, (1, N, 1))
+        pos = tf.tile(pos, [B, 1, 1])
+
+        Q_sq = tf.square(tf.transpose(Q_emp, perm=[0, 2, 1]))
+
+        Tmin = tf.cast(tf.argmax(mask, axis=2, output_type=tf.int32), tf.float32)
+        Tmin = Tmin / tf.cast(T, tf.float32)
+        Tmin = tf.expand_dims(Tmin, axis=-1)  # (B, N, 1)
+        Tminmean = tf.matmul(Q_sq, Tmin)
+
+        Tmax = tf.cast(
+            tf.shape(mask)[2]
+            - 1
+            - tf.argmax(tf.reverse(mask, axis=[2]), axis=2, output_type=tf.int32),
+            tf.float32,
+        )
+        Tmax = Tmax / tf.cast(T, tf.float32)
+        Tmax = tf.expand_dims(Tmax, axis=-1)  # (B, N, 1)
+        Tmaxmean = tf.matmul(Q_sq, Tmax)
+
+        T_vec = tf.fill((B, N, 1), tf.cast(T, tf.float32))
+        N_vec = tf.fill((B, N, 1), tf.cast(N, tf.float32))
+
+        input_seq = tf.concat(
+            [
+                lam_emp,
+                pos,
+                N_vec / T_vec,
+                Tminmean,
+                Tmaxmean,
+            ],
+            axis=-1,
+        )
+
+        return input_seq, Q_emp, Sigma_hat_diag, T
 
     def _reconstruct_cov(self, lam_pred, Q_emp, Sigma_hat_diag):
 
