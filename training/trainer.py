@@ -284,9 +284,10 @@ class Trainer_real_data_tf:
 
         Sigma_hat_diag = tf.linalg.diag_part(Sigma_hat)
 
-        std_pred = tf.sqrt(Sigma_hat_diag)
-        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
+        # we clamp bc some lines are all zeros but we can't just remove that line + it is rare so we prefer adding this
+        std_pred = tf.sqrt(tf.maximum(Sigma_hat_diag, 1e-12))
 
+        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
         corr_hat = 0.5 * (corr_hat + tf.transpose(corr_hat, perm=[0, 2, 1]))
 
         eigvals, eigvecs = tf.linalg.eigh(corr_hat)

@@ -115,15 +115,21 @@ def tf_cov_pairwise_mask(X, mask):
         X = tf.expand_dims(X, axis=0)  # (1, N, T)
 
     X = tf.cast(X, tf.float64)
+
+    # mask: 1 where valid, 0 where NaN
+    mask = tf.math.is_finite(X)  # (B, N, T)
     mask_f = tf.cast(mask, tf.float64)
 
     # mean over time dimension (T), ignoring NaNs
+    X0 = tf.where(mask, X, tf.zeros_like(X))  # replace NaN by 0 for sums
     cnt = tf.reduce_sum(mask_f, axis=-1, keepdims=True)  # (B, N, 1)
-    means = tf.reduce_sum(X * mask_f, axis=-1, keepdims=True) / tf.maximum(
-        cnt, 1.0
-    )  # (B,N,1)
+    means = tf.reduce_sum(X0, axis=-1, keepdims=True) / tf.maximum(cnt, 1.0)  # (B,N,1)
+
     # centered data (NaNs propagate in Xc, but we will zero them out next)
-    Xc_zero = (X - means) * mask_f  # (B, N, T)
+    Xc = X - means  # (B, N, T)
+
+    # centered data but NaN replaced by 0
+    Xc_zero = tf.where(mask, Xc, tf.zeros_like(Xc))
 
     # pairwise valid counts n_ij = sum_t mask[i,t] * mask[j,t]
     valid_counts = tf.matmul(mask_f, mask_f, transpose_b=True)  # (B, N, N)
@@ -135,9 +141,6 @@ def tf_cov_pairwise_mask(X, mask):
     denom = valid_counts - 1.0
     nan = tf.constant(float("nan"), dtype=tf.float64)
     denom = tf.where(denom > 0.0, denom, nan)
-    print(tf.reduce_sum(tf.cast(tf.math.is_nan(denom), tf.float64)))
-    print("min valid_counts:", tf.reduce_min(valid_counts))
-    print("nb pairs <=1:", tf.reduce_sum(tf.cast(valid_counts <= 1, tf.int32)))
 
     cov = numerator / denom
 
