@@ -59,7 +59,7 @@ import tensorflow as tf
 # fully vectorized covariance with pairwise-complete observations like pandas.cov()
 def tf_cov_pairwise(X):
     """
-    input X: (N, T) or (B, N, T)
+    input X: (N, T) or (B, N, T) X has NaNs
     """
     X = tf.convert_to_tensor(X)
     original_rank = X.shape.rank  # can be None in graph, but in eager it's fine
@@ -106,20 +106,15 @@ def tf_cov_pairwise(X):
 
 def tf_cov_pairwise_mask(X, mask):
     """
-    input X : (B, N, T)
-    mask : (B, N, T)
+    input X : (B, N, T) X doesn't containe any NaNs
+    mask : (B, N, T) mask is true when not missing and false when it is
     """
-    X = tf.convert_to_tensor(X)
     original_rank = X.shape.rank
 
     if original_rank == 2:
         X = tf.expand_dims(X, axis=0)  # (1, N, T)
 
     X = tf.cast(X, tf.float64)
-
-    mask_f = tf.cast(mask, tf.float64)
-
-    mask = tf.logical_not(mask)
     mask_f = tf.cast(mask, tf.float64)
 
     # mean over time dimension (T), ignoring NaNs
@@ -140,6 +135,9 @@ def tf_cov_pairwise_mask(X, mask):
     denom = valid_counts - 1.0
     nan = tf.constant(float("nan"), dtype=tf.float64)
     denom = tf.where(denom > 0.0, denom, nan)
+    print(tf.reduce_sum(tf.cast(tf.math.is_nan(denom), tf.float64)))
+    print("min valid_counts:", tf.reduce_min(valid_counts))
+    print("nb pairs <=1:", tf.reduce_sum(tf.cast(valid_counts <= 1, tf.int32)))
 
     cov = numerator / denom
 

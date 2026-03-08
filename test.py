@@ -7,6 +7,23 @@ from models.gru_denoiser import BiGRUSpectralDenoiserTensorFlow
 from training.trainer import Trainer_tf
 
 
+from data.real_dataloader import real_data_pipeline
+
+T = 600
+N = 50
+batch_size = 32
+dataset = real_data_pipeline(
+    batch_size=32,
+    date_bounds=("1995-01-01", "2015-01-01"),
+    n_days_out=10,
+    n_days_in=T,
+    n_stocks=N,
+    market_cap_range=(2500, 3000),
+    shift=0,
+)
+(rin, mask), rout = next(iter(dataset))
+
+
 mse = nn.MSELoss()
 N_min = 70
 N_max = 250

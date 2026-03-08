@@ -280,8 +280,7 @@ class Trainer_real_data_tf:
     def _construct_input_seq(self, rin, mask):
         B, N, T = tf.shape(rin)
 
-        Sigma_hat = tf_cov_pairwise_mask(rin, mask)
-        print("min var:", tf.reduce_min(tf.linalg.diag_part(Sigma_hat)))
+        Sigma_hat = tf_cov_pairwise_mask(rin, ~mask)
 
         Sigma_hat_diag = tf.linalg.diag_part(Sigma_hat)
 

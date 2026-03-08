@@ -278,8 +278,12 @@ def real_data_producer(
 
             # Returns In-sample
             returns_in_raw = historicalData[time_indices_in, selected_stocks[..., None]]
-            nan_in = np.isnan(returns_in_raw)
-            returns_in = np.where(nan_in, 0.0, returns_in_raw)
+            bad = np.isnan(returns_in_raw)  # emcompasses the nan value
+            # let's add the inf now
+            bad_next = np.zeros_like(bad)
+            bad_next[..., 1:] = bad[..., :-1]
+            bad = bad | bad_next
+            returns_in = np.where(bad, 0.0, returns_in_raw)
 
             # Returns Out-of-sample
             returns_out_raw = historicalData[
@@ -292,7 +296,7 @@ def real_data_producer(
             z = st.zscore(returns_in, axis=-1)
             z = np.nan_to_num(z, nan=0.0)
 
-            yield (z, nan_in), st.zscore(returns_out, axis=-1)
+            yield (z, bad), st.zscore(returns_out, axis=-1)
 
     if return_generator:
         return data_generator(no_miss)
