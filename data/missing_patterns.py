@@ -58,30 +58,40 @@ def tf_make_random_pattern_vecto(R, missing_constant):  # size (B, N, T)
     N = tf.shape(R)[1]
     T = tf.shape(R)[2]
 
+    # 0. draw n biased toward large values
+    u = tf.random.uniform((B,), 0.0, 1.0)
+    n = tf.cast(tf.floor((u**3) * tf.cast(N, tf.float32)), tf.int32)
+    # u^3 biases toward larger n
+
     # 1. draw random effective lengths
     T_rand = tf.random.uniform(
-        shape=(B, N - 1),
+        shape=(B, N),
         minval=T // missing_constant,
         maxval=T + 1,
         dtype=tf.int32,
-    )  # (B, N-1)
+    )  # (B, N)
 
-    T_last = tf.fill((B, 1), T)  # (B, 1) garantee to have at least one full observation
+    # assets before n are fully observed
+    asset_idx = tf.range(N)[None, :]
 
-    T_full = tf.concat([T_rand, T_last], axis=1)  # (B, N)
+    # first asset always fully observed
+    first_asset = asset_idx == 0
+
+    # assets before n fully observed
+    full_obs = tf.logical_or(first_asset, asset_idx < n[:, None])
+
+    T_full = tf.where(full_obs, T, T_rand)
 
     # 2. convert to t_vec
     t_sorted = tf.sort(T_full, direction="DESCENDING", axis=1)  # (B, N)
     t_vec = T - t_sorted  # (B, N)
 
     # 3. build mask
-    cols = tf.reshape(tf.range(T), (1, 1, -1))  # (1,1,T)
-    mask = cols >= tf.expand_dims(t_vec, axis=-1)  # (B,N,T)
+    cols = tf.reshape(tf.range(T), (1, 1, T))
+    mask = cols >= t_vec[..., None]
 
     # 4. apply mask
-    R_mono = tf.identity(R)
     nan_tensor = tf.cast(float("nan"), R.dtype)
-
-    R_mono = tf.where(mask, R_mono, nan_tensor)
+    R_mono = tf.where(mask, R, nan_tensor)
 
     return R_mono, t_vec, mask
