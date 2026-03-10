@@ -289,8 +289,12 @@ def real_data_producer(
             returns_out_raw = historicalData[
                 time_indices_out, selected_stocks[..., None]
             ]
-            nan_out = np.isnan(returns_out_raw)
-            returns_out = np.where(nan_out, 0.0, returns_out_raw)
+            bad_out = np.isnan(returns_out_raw)  # emcompasses the nan value
+            # let's add the inf now
+            bad_out_next = np.zeros_like(bad_out)
+            bad_out_next[..., 1:] = bad_out[..., :-1]
+            bad_out = bad_out | bad_out_next
+            returns_out = np.where(bad_out, 0.0, returns_out_raw)
 
             # if the line is made of only 0s
             z = st.zscore(returns_in, axis=-1)

@@ -251,10 +251,14 @@ class Trainer_real_data_tf:
     def _train_set(self, steps_per_epoch):
         with tf.GradientTape() as tape:
             loss = 0
-            for step, ((rin, mask), rout) in enumerate(self.dataset):
+            for step, ((rin, mask), rout) in enumerate(
+                self.dataset.take(steps_per_epoch)
+            ):
                 # input_seq, Q_emp, Sigma_true, T, Sigma_hat_diag, R_hat = next(
                 #    self.data_generator
                 # )
+                # print(tf.reduce_sum(tf.cast(tf.math.is_nan(rout), tf.int64)))
+
                 Sigma_true = tf_cov_pairwise(rout)
 
                 input_seq, Q_emp, Sigma_hat_diag, T = self._construct_input_seq(
@@ -283,9 +287,9 @@ class Trainer_real_data_tf:
         Sigma_hat = tf_cov_pairwise_mask(rin, ~mask)
 
         Sigma_hat_diag = tf.linalg.diag_part(Sigma_hat)
-
+        Sigma_hat_diag = tf.maximum(Sigma_hat_diag, 1e-12)
         # we clamp bc some lines are all zeros but we can't just remove that line + it is rare so we prefer adding this
-        std_pred = tf.sqrt(tf.maximum(Sigma_hat_diag, 1e-12))
+        std_pred = tf.sqrt(Sigma_hat_diag)
 
         corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
         corr_hat = 0.5 * (corr_hat + tf.transpose(corr_hat, perm=[0, 2, 1]))

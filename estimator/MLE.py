@@ -90,12 +90,9 @@ def tf_cov_pairwise(X):
     # numerator: sum of centered products
     numerator = tf.matmul(Xc_zero, Xc_zero, transpose_b=True)  # (B, N, N)
 
-    # denominator: n_ij - 1
-    denom = valid_counts - 1.0
-    nan = tf.constant(float("nan"), dtype=tf.float64)
-    denom = tf.where(denom > 0.0, denom, nan)
-
-    cov = numerator / denom
+    valid = valid_counts > 1
+    denom = tf.where(valid, valid_counts - 1, tf.ones_like(valid_counts))
+    cov = tf.where(valid, numerator / denom, tf.zeros_like(numerator))
 
     # drop batch if original input had no batch
     if original_rank == 2:
@@ -138,9 +135,9 @@ def tf_cov_pairwise_mask(X, mask):
     numerator = tf.matmul(Xc_zero, Xc_zero, transpose_b=True)  # (B, N, N)
 
     # denominator: n_ij - 1
-    denom = valid_counts - 1.0
-    nan = tf.constant(float("nan"), dtype=tf.float64)
-    denom = tf.where(denom > 0.0, denom, nan)
+    valid = valid_counts > 1
+    denom = tf.where(valid, valid_counts - 1, tf.ones_like(valid_counts))
+    cov = tf.where(valid, numerator / denom, tf.zeros_like(numerator))
 
     cov = numerator / denom
 
