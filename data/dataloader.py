@@ -1,119 +1,128 @@
+# import numpy as np
+# import torch
+# from data.missing_patterns import (
+#     make_random_pattern_vecto,
+#     tf_make_random_pattern_vecto,
+# )
+# from estimator.shaffer import (
+#     fit_monotone_regressions,
+#     reconstruct_mu_sigma_from_phi,
+# )
+# from estimator.MLE import torch_cov_pairwise, tf_cov_pairwise
+# import scipy.stats as st
+# from estimator.QIS import QIS_batched
+# from data.real_dataloader import real_data_pipeline
+#
+#
+# # generator of the data as suggested by Prof B
+# def data_generator(
+#     batch_size,
+#     missing_constant,  # >= 1, 1 being no missingness
+#     N_min=20,
+#     N_max=300,
+#     T_min=50,
+#     T_max=300,
+#     df_min_factor=10,
+#     df_max_factor=100,
+# ):
+#     while True:
+#         N = np.random.randint(N_min, N_max + 1)
+#         T = np.random.randint(T_min, T_max + 1)
+#
+#         # --------------- use inverse wishart to sample true covariance ----------------
+#
+#         df = np.random.randint(
+#             df_min_factor * (N + 2), df_max_factor * N, size=batch_size
+#         )  # degrees of freedom for invwishart
+#         invwishart_sampler = np.vectorize(
+#             lambda x: st.invwishart.rvs(df=x, scale=np.eye(N)) * (x - N - 1),
+#             signature="()->(n,n)",
+#         )
+#         Sigma_true = invwishart_sampler(df)
+#         Sigma_true = torch.tensor(Sigma_true, dtype=torch.float64)
+#         # We don't center nor normalize since I think it is unnecessary here
+#
+#         # -------------------- Simulate T samples, vectorized ---------------------------
+#         Z = torch.randn(batch_size, T, N, dtype=torch.float64)
+#         L = torch.linalg.cholesky(Sigma_true)
+#         R = L @ Z.transpose(1, 2)  # (B, N, T)
+#
+#         # Empirical covariance
+#         R_hat, _, mask = make_random_pattern_vecto(
+#             R, missing_constant
+#         )  # (B, N, T), (B, N), (B, N, T)
+#
+#         Sigma_hat = torch_cov_pairwise(R_hat).double()  # (B, N, N)
+#         Sigma_hat_diag = torch.diagonal(Sigma_hat, dim1=1, dim2=2)
+#         # By definition Sigma_hat is symetric but numericaly it can be asymmetric at ~1e-12 level for instance, the lines prevent it
+#         # Sigma_hat = 0.5 * (Sigma_hat + Sigma_hat.transpose(-1, -2))
+#
+#         # ----------------------- Compute correlation Matrix ----------------------------
+#         # eps = 1e-6
+#         std_pred = torch.sqrt(Sigma_hat_diag)
+#         corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
+#         corr_hat = 0.5 * (corr_hat + corr_hat.transpose(-1, -2))
+#
+#         # corr_hat = 0.5 * (corr_hat + corr_hat.transpose(-1, -2))
+#         # jitter = 1e-8
+#         # corr_hat = corr_hat + jitter * torch.eye(N, device=corr_hat.device)
+#
+#         eigvals, eigvecs = torch.linalg.eigh(
+#             corr_hat
+#         )  # eigh because always symetric by construction
+#
+#         eigvals = eigvals.float()  # float to prepare batch
+#         eigvecs = eigvecs.float()
+#
+#         # eps = 1e-6
+#
+#         # Floor eigenvalues
+#         # eigvals = torch.clamp(eigvals, min=eps)
+#
+#         # Enforce trace = N
+#         # eigvals = eigvals / eigvals.mean(dim=1, keepdim=True)
+#
+#         lam_emp = eigvals.unsqueeze(-1)
+#         Q_emp = eigvecs
+#         # lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)  # (B, N, 1)
+#         # Q_emp = torch.flip(eigvecs, dims=[2])  # (B, N, N)
+#
+#         Tmin = mask.float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
+#         Tmax = mask.flip(dims=[2]).float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
+#
+#         Tmin_mean = Q_emp.transpose(1, 2).pow(2) @ Tmin.float()
+#         Tmax_mean = Q_emp.transpose(1, 2).pow(2) @ Tmax.float()
+#
+#         # ----------------------------------- Prepare Batch --------------------------------------
+#
+#         # Build conditioning scalars
+#         T_vec = torch.full(
+#             (lam_emp.shape[0], lam_emp.shape[1], 1), T, dtype=torch.float32
+#         )
+#         N_vec = torch.full(
+#             (lam_emp.shape[0], lam_emp.shape[1], 1),
+#             lam_emp.shape[1],
+#             dtype=torch.float32,
+#         )
+#
+#         # effective concentration ratio per eigenmode (Tmin_mean is in absolute steps here)
+#         effective_T = torch.clamp(T_vec - Tmin_mean, min=1.0)
+#         q_eff = N_vec / effective_T  # (B, N, 1)
+#
+#         # Build input sequence to the GRU
+#         input_seq = torch.cat(
+#             [lam_emp, N_vec, T_vec, N_vec / T_vec, Tmin_mean, Tmax_mean, q_eff], dim=-1
+#         )
+#
+#         yield input_seq, Q_emp, Sigma_true, T, Sigma_hat_diag, R
+
+
 import numpy as np
-import torch
-from data.missing_patterns import (
-    make_random_pattern_vecto,
-    tf_make_random_pattern_vecto,
-)
-from estimator.shaffer import (
-    fit_monotone_regressions,
-    reconstruct_mu_sigma_from_phi,
-)
-from estimator.MLE import torch_cov_pairwise, tf_cov_pairwise
 import scipy.stats as st
-from estimator.QIS import QIS_batched
-from data.real_dataloader import real_data_pipeline
-
-
-# generator of the data as suggested by Prof B
-def data_generator(
-    batch_size,
-    missing_constant,  # >= 1, 1 being no missingness
-    N_min=20,
-    N_max=300,
-    T_min=50,
-    T_max=300,
-    df_min_factor=10,
-    df_max_factor=100,
-):
-    while True:
-        N = np.random.randint(N_min, N_max + 1)
-        T = np.random.randint(T_min, T_max + 1)
-
-        # --------------- use inverse wishart to sample true covariance ----------------
-
-        df = np.random.randint(
-            df_min_factor * (N + 2), df_max_factor * N, size=batch_size
-        )  # degrees of freedom for invwishart
-        invwishart_sampler = np.vectorize(
-            lambda x: st.invwishart.rvs(df=x, scale=np.eye(N)) * (x - N - 1),
-            signature="()->(n,n)",
-        )
-        Sigma_true = invwishart_sampler(df)
-        Sigma_true = torch.tensor(Sigma_true, dtype=torch.float64)
-        # We don't center nor normalize since I think it is unnecessary here
-
-        # -------------------- Simulate T samples, vectorized ---------------------------
-        Z = torch.randn(batch_size, T, N, dtype=torch.float64)
-        L = torch.linalg.cholesky(Sigma_true)
-        R = L @ Z.transpose(1, 2)  # (B, N, T)
-
-        # Empirical covariance
-        R_hat, _, mask = make_random_pattern_vecto(
-            R, missing_constant
-        )  # (B, N, T), (B, N), (B, N, T)
-
-        Sigma_hat = torch_cov_pairwise(R_hat).double()  # (B, N, N)
-        Sigma_hat_diag = torch.diagonal(Sigma_hat, dim1=1, dim2=2)
-        # By definition Sigma_hat is symetric but numericaly it can be asymmetric at ~1e-12 level for instance, the lines prevent it
-        # Sigma_hat = 0.5 * (Sigma_hat + Sigma_hat.transpose(-1, -2))
-
-        # ----------------------- Compute correlation Matrix ----------------------------
-        # eps = 1e-6
-        std_pred = torch.sqrt(Sigma_hat_diag)
-        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
-        corr_hat = 0.5 * (corr_hat + corr_hat.transpose(-1, -2))
-
-        # corr_hat = 0.5 * (corr_hat + corr_hat.transpose(-1, -2))
-        # jitter = 1e-8
-        # corr_hat = corr_hat + jitter * torch.eye(N, device=corr_hat.device)
-
-        eigvals, eigvecs = torch.linalg.eigh(
-            corr_hat
-        )  # eigh because always symetric by construction
-
-        eigvals = eigvals.float()  # float to prepare batch
-        eigvecs = eigvecs.float()
-
-        # eps = 1e-6
-
-        # Floor eigenvalues
-        # eigvals = torch.clamp(eigvals, min=eps)
-
-        # Enforce trace = N
-        # eigvals = eigvals / eigvals.mean(dim=1, keepdim=True)
-
-        lam_emp = eigvals.unsqueeze(-1)
-        Q_emp = eigvecs
-        # lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)  # (B, N, 1)
-        # Q_emp = torch.flip(eigvecs, dims=[2])  # (B, N, N)
-
-        Tmin = mask.float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
-        Tmax = mask.flip(dims=[2]).float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
-
-        Tmin_mean = Q_emp.transpose(1, 2).pow(2) @ Tmin.float()
-        Tmax_mean = Q_emp.transpose(1, 2).pow(2) @ Tmax.float()
-
-        # ----------------------------------- Prepare Batch --------------------------------------
-
-        # Build conditioning scalars
-        T_vec = torch.full(
-            (lam_emp.shape[0], lam_emp.shape[1], 1), T, dtype=torch.float32
-        )
-        N_vec = torch.full(
-            (lam_emp.shape[0], lam_emp.shape[1], 1),
-            lam_emp.shape[1],
-            dtype=torch.float32,
-        )
-
-        # Build input sequence to the GRU
-        input_seq = torch.cat(
-            [lam_emp, N_vec, T_vec, N_vec / T_vec, Tmin_mean, Tmax_mean], dim=-1
-        )
-
-        yield input_seq, Q_emp, Sigma_true, T, Sigma_hat_diag, R
-
-
 import tensorflow as tf
+from data.missing_patterns import tf_make_random_pattern_vecto
+from estimator.MLE import tf_cov_pairwise
+from data.real_dataloader import real_data_pipeline
 
 
 # generator of the data as suggested by Prof B but in tensorflow
@@ -133,25 +142,25 @@ def tf_data_generator(
 
         N = np.random.randint(N_min, N_max + 1)
 
-        # u = np.random.uniform(0, 1)
-        # to draw more big q than small q
-        # q = q_min + (q_max - q_min) * u**0.5
-        q = np.random.uniform(q_min, q_max + 1)
+        # biased toward higher q (where NN advantage over QIS is largest)
+        u = np.random.uniform(0, 1)
+        q = q_min + (q_max - q_min) * u**0.5
 
         T = int(N / q)
 
         # --------------- use inverse wishart to sample true covariance ----------------
 
-        df = np.random.randint(
-            int(df_min_factor * (N + 2)), int(df_max_factor * N), size=batch_size
-        )  # degrees of freedom for invwishart
+        # single df for the whole batch — avoids 50 serial scipy calls
+        df_val = np.random.randint(int(df_min_factor * (N + 2)), int(df_max_factor * N))
 
-        Sigma_true = np.stack(
-            [st.invwishart.rvs(df=d, scale=np.eye(N)) * (d - N - 1) for d in df],
-            axis=0,
-        )
+        # IW(df, I_N): sample Z ~ N(0,1)^{df x N}, then (Z^T Z)^{-1} ~ IW(df, I_N)
+        # scale by (df - N - 1) so E[Sigma_true] = I_N
+        Z = np.random.randn(batch_size, df_val, N)              # (B, df, N)
+        ZtZ = Z.transpose(0, 2, 1) @ Z                          # (B, N, N)  Wishart sample
+        I_batch = np.eye(N)[None].repeat(batch_size, axis=0)    # (B, N, N)
+        Sigma_true = np.linalg.solve(ZtZ, I_batch) * (df_val - N - 1)  # (B, N, N)
 
-        Sigma_true = tf.convert_to_tensor(Sigma_true, dtype=tf.float64)  # on average 1
+        Sigma_true = tf.convert_to_tensor(Sigma_true, dtype=tf.float64)
 
         # -------------------- Simulate T samples, vectorized ---------------------------
 
@@ -221,6 +230,13 @@ def tf_data_generator(
         T_vec = tf.fill((batch_size, N, 1), tf.cast(T, tf.float32))
         N_vec = tf.fill((batch_size, N, 1), tf.cast(N, tf.float32))
 
+        # effective concentration ratio per eigenmode:
+        # eigenmode j is built from assets whose first observation is at Tminmean[j]*T,
+        # so it has only (1 - Tminmean[j]) * T observations on average.
+        # q_j^eff = N / ((1 - Tminmean_j) * T) tells the network how noisy eigenmode j is.
+        effective_T_frac = tf.maximum(1.0 - Tminmean, 1.0 / tf.cast(T, tf.float32))
+        q_eff = (N_vec / T_vec) / effective_T_frac  # (B, N, 1)
+
         # Build input sequence to the GRU
         input_seq = tf.concat(
             [
@@ -229,7 +245,8 @@ def tf_data_generator(
                 N_vec / T_vec,
                 Tminmean,
                 Tmaxmean,
-            ],  # , N_vec, T_vec, Tmin, Tmax
+                q_eff,
+            ],
             axis=-1,
         )
 
