@@ -1,116 +1,116 @@
-from training.optimizer import get_optimizer
-import torch.nn as nn
-import torch
-from estimator.MLE import torch_cov_pairwise
-import numpy as np
-
-
-class Trainer:
-    def __init__(
-        self,
-        model,
-        is_train_on_real_data,
-        loss_function,
-        data_generator,
-        lr,
-        weight_decay,
-        batch_size,
-        epochs,
-        N_min,
-        N_max,
-        T_min,
-        T_max,
-        log_interval,
-        accumulate_steps,
-        dataset,
-        missing_constant,
-    ):
-        self.model = model
-        self.is_train_on_real_data = is_train_on_real_data
-        self.optimizer = get_optimizer(model, lr=lr, weight_decay=weight_decay)
-        self.loss_function = loss_function
-        self.data_generator = data_generator
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.N_min = N_min
-        self.N_max = N_max
-        self.T_min = T_min
-        self.T_max = T_max
-        self.log_interval = log_interval
-        self.accumulate_steps = accumulate_steps
-        self.dataset = dataset
-        self.missing_constant = missing_constant
-
-        self.loss_history = []
-
-    def train(self):
-        print(f"Starting training for {self.epochs} epochs…")
-
-        if not self.is_train_on_real_data:
-            generator = self.data_generator(
-                self.batch_size,
-                N_min=self.N_min,
-                N_max=self.N_max,
-                T_min=self.T_min,
-                T_max=self.T_max,
-                missing_constant=self.missing_constant,
-            )
-        else:
-            generator = self.data_generator(
-                N_min=self.N_min,
-                N_max=self.N_max,
-                T_min=self.T_min,
-                T_max=self.T_max,
-                dataset=self.dataset,
-                missing_constant=self.missing_constant,
-            )
-
-        for epoch in range(self.epochs):
-            self.model.train()
-            self.optimizer.zero_grad()
-
-            for _ in range(
-                self.accumulate_steps
-            ):  # accumulate gradients over multiple batches
-                input_seq, Q_emp, Mat_oos, T, Sigma_hat_diag, _ = next(generator)
-
-                # Forward through the network to estimate corr matrix eigenvalues
-                # In the input_seq we pass :
-                #   the eigenvalues of a corr matrix which has Q_emp*Sigma_hat_diag as transition matrix (to cov)
-                #   N_vec, T_vec, which are sizes of the different matrix
-                #   N_vec / T_vec, which is the ratio of ...
-                #   Tmin_mean, Tmax_mean, which are featured engeneered and supposed to help with the prediction given though some variable are missing
-
-                lam_pred = self.model(input_seq)
-                cov_pred = (
-                    torch.sqrt(torch.diag_embed(Sigma_hat_diag)).float()
-                    @ Q_emp
-                    @ torch.diag_embed(lam_pred)
-                    @ Q_emp.transpose(-1, -2)
-                    @ torch.sqrt(torch.diag_embed(Sigma_hat_diag)).float()
-                )
-
-                # When we train on real data we don't have the real cov/corr matrix but we have oos data which we can use that way :
-                if self.is_train_on_real_data:
-                    # in that case Mat_oos was oos return on 10 days; thanks to them we compute the covariance matrix of the assets
-                    # in the case where train_on_real_data is false the Mat_oos is already the true covariance matrix (we say true because it is thnak to it that return are generated)
-                    Mat_oos = torch_cov_pairwise(Mat_oos)
-
-                # at the end of the day we want the loss between covariance to be small so it is our loss criterion
-                loss = self.loss_function(Mat_oos, cov_pred, T)
-                (loss / self.accumulate_steps).backward()
-
-            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)  # keeps
-            self.optimizer.step()
-
-            self.loss_history.append(loss.item())
-
-            # logging
-            if (epoch + 1) % self.log_interval == 0:
-                print(f"Epoch {epoch+1}/{self.epochs} — loss: {loss.item():.8f}")
-
-        print("Training complete.")
-        return self.loss_history
+# from training.optimizer import get_optimizer
+# import torch.nn as nn
+# import torch
+# from estimator.MLE import torch_cov_pairwise
+# import numpy as np
+#
+#
+# class Trainer:
+#     def __init__(
+#         self,
+#         model,
+#         is_train_on_real_data,
+#         loss_function,
+#         data_generator,
+#         lr,
+#         weight_decay,
+#         batch_size,
+#         epochs,
+#         N_min,
+#         N_max,
+#         T_min,
+#         T_max,
+#         log_interval,
+#         accumulate_steps,
+#         dataset,
+#         missing_constant,
+#     ):
+#         self.model = model
+#         self.is_train_on_real_data = is_train_on_real_data
+#         self.optimizer = get_optimizer(model, lr=lr, weight_decay=weight_decay)
+#         self.loss_function = loss_function
+#         self.data_generator = data_generator
+#         self.batch_size = batch_size
+#         self.epochs = epochs
+#         self.N_min = N_min
+#         self.N_max = N_max
+#         self.T_min = T_min
+#         self.T_max = T_max
+#         self.log_interval = log_interval
+#         self.accumulate_steps = accumulate_steps
+#         self.dataset = dataset
+#         self.missing_constant = missing_constant
+#
+#         self.loss_history = []
+#
+#     def train(self):
+#         print(f"Starting training for {self.epochs} epochs…")
+#
+#         if not self.is_train_on_real_data:
+#             generator = self.data_generator(
+#                 self.batch_size,
+#                 N_min=self.N_min,
+#                 N_max=self.N_max,
+#                 T_min=self.T_min,
+#                 T_max=self.T_max,
+#                 missing_constant=self.missing_constant,
+#             )
+#         else:
+#             generator = self.data_generator(
+#                 N_min=self.N_min,
+#                 N_max=self.N_max,
+#                 T_min=self.T_min,
+#                 T_max=self.T_max,
+#                 dataset=self.dataset,
+#                 missing_constant=self.missing_constant,
+#             )
+#
+#         for epoch in range(self.epochs):
+#             self.model.train()
+#             self.optimizer.zero_grad()
+#
+#             for _ in range(
+#                 self.accumulate_steps
+#             ):  # accumulate gradients over multiple batches
+#                 input_seq, Q_emp, Mat_oos, T, Sigma_hat_diag, _ = next(generator)
+#
+#                 # Forward through the network to estimate corr matrix eigenvalues
+#                 # In the input_seq we pass :
+#                 #   the eigenvalues of a corr matrix which has Q_emp*Sigma_hat_diag as transition matrix (to cov)
+#                 #   N_vec, T_vec, which are sizes of the different matrix
+#                 #   N_vec / T_vec, which is the ratio of ...
+#                 #   Tmin_mean, Tmax_mean, which are featured engeneered and supposed to help with the prediction given though some variable are missing
+#
+#                 lam_pred = self.model(input_seq)
+#                 cov_pred = (
+#                     torch.sqrt(torch.diag_embed(Sigma_hat_diag)).float()
+#                     @ Q_emp
+#                     @ torch.diag_embed(lam_pred)
+#                     @ Q_emp.transpose(-1, -2)
+#                     @ torch.sqrt(torch.diag_embed(Sigma_hat_diag)).float()
+#                 )
+#
+#                 # When we train on real data we don't have the real cov/corr matrix but we have oos data which we can use that way :
+#                 if self.is_train_on_real_data:
+#                     # in that case Mat_oos was oos return on 10 days; thanks to them we compute the covariance matrix of the assets
+#                     # in the case where train_on_real_data is false the Mat_oos is already the true covariance matrix (we say true because it is thnak to it that return are generated)
+#                     Mat_oos = torch_cov_pairwise(Mat_oos)
+#
+#                 # at the end of the day we want the loss between covariance to be small so it is our loss criterion
+#                 loss = self.loss_function(Mat_oos, cov_pred, T)
+#                 (loss / self.accumulate_steps).backward()
+#
+#             nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)  # keeps
+#             self.optimizer.step()
+#
+#             self.loss_history.append(loss.item())
+#
+#             # logging
+#             if (epoch + 1) % self.log_interval == 0:
+#                 print(f"Epoch {epoch+1}/{self.epochs} — loss: {loss.item():.8f}")
+#
+#         print("Training complete.")
+#         return self.loss_history
 
 
 import tensorflow as tf
@@ -133,6 +133,7 @@ class Trainer_tf:
         N_max,
         q_min,
         q_max,
+        lr=1e-4,
     ):
         self.model = model
         self.epochs = epochs
@@ -143,8 +144,11 @@ class Trainer_tf:
         self.N_max = N_max
         self.q_min = q_min
         self.q_max = q_max
-        # first we need an optimizer :
-        self.optimizer = tf.keras.optimizers.Adam(1e-4)
+        # cosine decay from lr to 0 over all epochs (one optimizer step per epoch)
+        lr_schedule = tf.keras.optimizers.schedules.CosineDecay(
+            initial_learning_rate=lr, decay_steps=self.epochs
+        )
+        self.optimizer = tf.keras.optimizers.Adam(lr_schedule)
         # we need a loss function
         self.loss_function = tf_loss_function_mat
         # and a data generator
@@ -215,6 +219,7 @@ class Trainer_tf:
 
 
 from estimator.MLE import tf_cov_pairwise, tf_cov_pairwise_mask
+from models.losses import tf_variance_loss
 
 
 class Trainer_real_data_tf:
@@ -224,21 +229,19 @@ class Trainer_real_data_tf:
         dataset,  # a tf dataset we will iterate on
         batch_size,
         epochs,
-        # N_min,
-        # N_max,
-        # q_min,
-        # q_max,
+        lr=1e-4,
     ):
         self.model = model
         self.epochs = epochs
         self.batch_size = batch_size
-        # self.N_min = N_min
-        # self.N_max = N_max
-        # self.q_min = q_min
-        # self.q_max = q_max
-        self.optimizer = tf.keras.optimizers.Adam(1e-4)
+        # cosine decay from lr to 0 over all epochs (one optimizer step per epoch)
+        lr_schedule = tf.keras.optimizers.schedules.CosineDecay(
+            initial_learning_rate=lr, decay_steps=self.epochs
+        )
+        self.optimizer = tf.keras.optimizers.Adam(lr_schedule)
         self.loss_function = tf_loss_function_mat
         self.dataset = dataset
+        self._dataset_iter = iter(dataset)  # persistent iterator — never restarts, no OUT_OF_RANGE
         self.loss_history = []
 
     def train(self, step_per_epoch):
@@ -249,32 +252,23 @@ class Trainer_real_data_tf:
         return self.loss_history
 
     def _train_set(self, steps_per_epoch):
+        # Preprocessing outside the tape: pairwise cov + eigh don't need gradients
+        batches = []
+        for _ in range(steps_per_epoch):
+            (rin, mask), rout = next(self._dataset_iter)
+            input_seq, Q_emp, Sigma_hat_diag, T = self._construct_input_seq(rin, mask)
+            batches.append((
+                input_seq,
+                tf.cast(Q_emp, tf.float32),
+                tf.cast(rout, tf.float32),
+            ))
+
+        # Only model forward pass and loss inside the tape
         with tf.GradientTape() as tape:
             loss = 0
-            for step, ((rin, mask), rout) in enumerate(
-                self.dataset.take(steps_per_epoch)
-            ):
-                # input_seq, Q_emp, Sigma_true, T, Sigma_hat_diag, R_hat = next(
-                #    self.data_generator
-                # )
-                # print(tf.reduce_sum(tf.cast(tf.math.is_nan(rout), tf.int64)))
-
-                Sigma_true = tf_cov_pairwise(rout)
-
-                input_seq, Q_emp, Sigma_hat_diag, T = self._construct_input_seq(
-                    rin, mask
-                )
-                Q_emp = tf.cast(Q_emp, tf.float32)
-                Sigma_hat_diag = tf.cast(Sigma_hat_diag, tf.float32)
-                Sigma_true = tf.cast(Sigma_true, tf.float32)
-
-                # input_seq, containts Sigma_emp: (B, N, T)
+            for input_seq, Q_emp, rout in batches:
                 lam_pred = self.model(input_seq, training=True)
-
-                # lam_pred: (B, N)
-                Sigma_pred = self._reconstruct_cov(lam_pred, Q_emp, Sigma_hat_diag)
-
-                loss += self.loss_function(Sigma_true, Sigma_pred, T) / steps_per_epoch
+                loss += tf_variance_loss(lam_pred, Q_emp, rout) / steps_per_epoch
 
         grads = tape.gradient(loss, self.model.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
@@ -284,15 +278,26 @@ class Trainer_real_data_tf:
     def _construct_input_seq(self, rin, mask):
         B, N, T = tf.shape(rin)
 
-        Sigma_hat = tf_cov_pairwise_mask(rin, ~mask)
+        # mask from dataloader: True where MISSING — invert for pairwise cov
+        observed = ~mask
+        Sigma_hat = tf_cov_pairwise_mask(rin, observed)
 
+        # extract diagonal variances, clamp to avoid zero std
         Sigma_hat_diag = tf.linalg.diag_part(Sigma_hat)
-        Sigma_hat_diag = tf.maximum(Sigma_hat_diag, 1e-12)
-        # we clamp bc some lines are all zeros but we can't just remove that line + it is rare so we prefer adding this
+        Sigma_hat_diag = tf.maximum(Sigma_hat_diag, 1e-8)
         std_pred = tf.sqrt(Sigma_hat_diag)
 
-        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
+        # normalize to correlation, replace any NaN/Inf with 0
+        corr_hat = Sigma_hat / (std_pred[:, :, None] * std_pred[:, None, :])
+        corr_hat = tf.where(tf.math.is_finite(corr_hat), corr_hat, tf.zeros_like(corr_hat))
+
+        # force diagonal to exactly 1 and symmetrize
+        eye = tf.eye(N, batch_shape=[B], dtype=corr_hat.dtype)
+        corr_hat = corr_hat - tf.linalg.diag(tf.linalg.diag_part(corr_hat)) + eye
         corr_hat = 0.5 * (corr_hat + tf.transpose(corr_hat, perm=[0, 2, 1]))
+
+        # small regularization to ensure strict PSD before eigh
+        corr_hat = corr_hat + 1e-6 * eye
 
         eigvals, eigvecs = tf.linalg.eigh(corr_hat)
 
@@ -308,15 +313,18 @@ class Trainer_real_data_tf:
 
         Q_sq = tf.square(tf.transpose(Q_emp, perm=[0, 2, 1]))
 
-        Tmin = tf.cast(tf.argmax(mask, axis=2, output_type=tf.int32), tf.float32)
+        # Tmin: first OBSERVED time step — argmax on observed (True where present)
+        observed_f = tf.cast(observed, tf.float32)
+        Tmin = tf.cast(tf.argmax(observed_f, axis=2, output_type=tf.int32), tf.float32)
         Tmin = Tmin / tf.cast(T, tf.float32)
         Tmin = tf.expand_dims(Tmin, axis=-1)  # (B, N, 1)
         Tminmean = tf.matmul(Q_sq, Tmin)
 
+        # Tmax: last OBSERVED time step
         Tmax = tf.cast(
-            tf.shape(mask)[2]
+            tf.shape(observed_f)[2]
             - 1
-            - tf.argmax(tf.reverse(mask, axis=[2]), axis=2, output_type=tf.int32),
+            - tf.argmax(tf.reverse(observed_f, axis=[2]), axis=2, output_type=tf.int32),
             tf.float32,
         )
         Tmax = Tmax / tf.cast(T, tf.float32)
@@ -326,6 +334,13 @@ class Trainer_real_data_tf:
         T_vec = tf.fill((B, N, 1), tf.cast(T, tf.float32))
         N_vec = tf.fill((B, N, 1), tf.cast(N, tf.float32))
 
+        # effective concentration ratio per eigenmode:
+        # eigenmode j is built from assets whose first observation is at Tminmean[j]*T,
+        # so it has only (1 - Tminmean[j]) * T observations on average.
+        # q_j^eff = N / ((1 - Tminmean_j) * T) tells the network how noisy eigenmode j is.
+        effective_T_frac = tf.maximum(1.0 - Tminmean, 1.0 / tf.cast(T, tf.float32))
+        q_eff = (N_vec / T_vec) / effective_T_frac  # (B, N, 1)
+
         input_seq = tf.concat(
             [
                 lam_emp,
@@ -333,6 +348,7 @@ class Trainer_real_data_tf:
                 N_vec / T_vec,
                 Tminmean,
                 Tmaxmean,
+                q_eff,
             ],
             axis=-1,
         )

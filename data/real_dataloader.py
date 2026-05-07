@@ -296,11 +296,15 @@ def real_data_producer(
             bad_out = bad_out | bad_out_next
             returns_out = np.where(bad_out, 0.0, returns_out_raw)
 
-            # if the line is made of only 0s
-            z = st.zscore(returns_in, axis=-1)
-            z = np.nan_to_num(z, nan=0.0)
+            # z-score using only observed values (exclude zeros at missing positions)
+            obs_mask = ~bad                                                     # (B, N, T)
+            cnt = obs_mask.sum(axis=-1, keepdims=True).clip(min=1)             # (B, N, 1)
+            mean_obs = np.where(obs_mask, returns_in, 0.0).sum(axis=-1, keepdims=True) / cnt
+            sq = np.where(obs_mask, (returns_in - mean_obs) ** 2, 0.0)
+            std_obs = np.sqrt(sq.sum(axis=-1, keepdims=True) / np.maximum(cnt - 1, 1)).clip(min=1e-8)
+            z = np.where(obs_mask, (returns_in - mean_obs) / std_obs, 0.0)
 
-            yield (z, bad), st.zscore(returns_out, axis=-1)
+            yield (z, bad), returns_out
 
     if return_generator:
         return data_generator(no_miss)
