@@ -1,128 +1,8 @@
-# import numpy as np
-# import torch
-# from data.missing_patterns import (
-#     make_random_pattern_vecto,
-#     tf_make_random_pattern_vecto,
-# )
-# from estimator.shaffer import (
-#     fit_monotone_regressions,
-#     reconstruct_mu_sigma_from_phi,
-# )
-# from estimator.MLE import torch_cov_pairwise, tf_cov_pairwise
-# import scipy.stats as st
-# from estimator.QIS import QIS_batched
-# from data.real_dataloader import real_data_pipeline
-#
-#
-# # generator of the data as suggested by Prof B
-# def data_generator(
-#     batch_size,
-#     missing_constant,  # >= 1, 1 being no missingness
-#     N_min=20,
-#     N_max=300,
-#     T_min=50,
-#     T_max=300,
-#     df_min_factor=10,
-#     df_max_factor=100,
-# ):
-#     while True:
-#         N = np.random.randint(N_min, N_max + 1)
-#         T = np.random.randint(T_min, T_max + 1)
-#
-#         # --------------- use inverse wishart to sample true covariance ----------------
-#
-#         df = np.random.randint(
-#             df_min_factor * (N + 2), df_max_factor * N, size=batch_size
-#         )  # degrees of freedom for invwishart
-#         invwishart_sampler = np.vectorize(
-#             lambda x: st.invwishart.rvs(df=x, scale=np.eye(N)) * (x - N - 1),
-#             signature="()->(n,n)",
-#         )
-#         Sigma_true = invwishart_sampler(df)
-#         Sigma_true = torch.tensor(Sigma_true, dtype=torch.float64)
-#         # We don't center nor normalize since I think it is unnecessary here
-#
-#         # -------------------- Simulate T samples, vectorized ---------------------------
-#         Z = torch.randn(batch_size, T, N, dtype=torch.float64)
-#         L = torch.linalg.cholesky(Sigma_true)
-#         R = L @ Z.transpose(1, 2)  # (B, N, T)
-#
-#         # Empirical covariance
-#         R_hat, _, mask = make_random_pattern_vecto(
-#             R, missing_constant
-#         )  # (B, N, T), (B, N), (B, N, T)
-#
-#         Sigma_hat = torch_cov_pairwise(R_hat).double()  # (B, N, N)
-#         Sigma_hat_diag = torch.diagonal(Sigma_hat, dim1=1, dim2=2)
-#         # By definition Sigma_hat is symetric but numericaly it can be asymmetric at ~1e-12 level for instance, the lines prevent it
-#         # Sigma_hat = 0.5 * (Sigma_hat + Sigma_hat.transpose(-1, -2))
-#
-#         # ----------------------- Compute correlation Matrix ----------------------------
-#         # eps = 1e-6
-#         std_pred = torch.sqrt(Sigma_hat_diag)
-#         corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
-#         corr_hat = 0.5 * (corr_hat + corr_hat.transpose(-1, -2))
-#
-#         # corr_hat = 0.5 * (corr_hat + corr_hat.transpose(-1, -2))
-#         # jitter = 1e-8
-#         # corr_hat = corr_hat + jitter * torch.eye(N, device=corr_hat.device)
-#
-#         eigvals, eigvecs = torch.linalg.eigh(
-#             corr_hat
-#         )  # eigh because always symetric by construction
-#
-#         eigvals = eigvals.float()  # float to prepare batch
-#         eigvecs = eigvecs.float()
-#
-#         # eps = 1e-6
-#
-#         # Floor eigenvalues
-#         # eigvals = torch.clamp(eigvals, min=eps)
-#
-#         # Enforce trace = N
-#         # eigvals = eigvals / eigvals.mean(dim=1, keepdim=True)
-#
-#         lam_emp = eigvals.unsqueeze(-1)
-#         Q_emp = eigvecs
-#         # lam_emp = torch.flip(eigvals, dims=[1]).unsqueeze(-1)  # (B, N, 1)
-#         # Q_emp = torch.flip(eigvecs, dims=[2])  # (B, N, N)
-#
-#         Tmin = mask.float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
-#         Tmax = mask.flip(dims=[2]).float().argmax(dim=2).unsqueeze(-1)  # (B, N, 1)
-#
-#         Tmin_mean = Q_emp.transpose(1, 2).pow(2) @ Tmin.float()
-#         Tmax_mean = Q_emp.transpose(1, 2).pow(2) @ Tmax.float()
-#
-#         # ----------------------------------- Prepare Batch --------------------------------------
-#
-#         # Build conditioning scalars
-#         T_vec = torch.full(
-#             (lam_emp.shape[0], lam_emp.shape[1], 1), T, dtype=torch.float32
-#         )
-#         N_vec = torch.full(
-#             (lam_emp.shape[0], lam_emp.shape[1], 1),
-#             lam_emp.shape[1],
-#             dtype=torch.float32,
-#         )
-#
-#         # effective concentration ratio per eigenmode (Tmin_mean is in absolute steps here)
-#         effective_T = torch.clamp(T_vec - Tmin_mean, min=1.0)
-#         q_eff = N_vec / effective_T  # (B, N, 1)
-#
-#         # Build input sequence to the GRU
-#         input_seq = torch.cat(
-#             [lam_emp, N_vec, T_vec, N_vec / T_vec, Tmin_mean, Tmax_mean, q_eff], dim=-1
-#         )
-#
-#         yield input_seq, Q_emp, Sigma_true, T, Sigma_hat_diag, R
-
-
 import numpy as np
 import scipy.stats as st
 import tensorflow as tf
 from data.missing_patterns import tf_make_random_pattern_vecto
 from estimator.MLE import tf_cov_pairwise
-from data.real_dataloader import real_data_pipeline
 
 
 # generator of the data as suggested by Prof B but in tensorflow
@@ -142,9 +22,7 @@ def tf_data_generator(
 
         N = np.random.randint(N_min, N_max + 1)
 
-        # biased toward higher q (where NN advantage over QIS is largest)
-        u = np.random.uniform(0, 1)
-        q = q_min + (q_max - q_min) * u**0.5
+        q = np.random.uniform(q_min, q_max)
 
         T = int(N / q)
 
@@ -237,17 +115,106 @@ def tf_data_generator(
         effective_T_frac = tf.maximum(1.0 - Tminmean, 1.0 / tf.cast(T, tf.float32))
         q_eff = (N_vec / T_vec) / effective_T_frac  # (B, N, 1)
 
-        # Build input sequence to the GRU
+        # IPR: N * Σ_i Q_{ij}^4 — eigenmode localization on the asset space
+        # Q_sq[b, j, i] = Q_emp[b, i, j]^2  →  Q_sq^2 gives Q_emp^4
+        ipr = tf.cast(N, tf.float32) * tf.reduce_sum(tf.square(Q_sq), axis=2)  # (B, N)
+        ipr = tf.expand_dims(ipr, axis=-1)  # (B, N, 1)
+
+        # z_MP: Marchenko-Pastur z-score — distance from upper bulk edge in units of √q_eff
+        q_eff_safe = tf.maximum(q_eff, 1e-6)
+        lam_plus = (1.0 + tf.sqrt(q_eff_safe)) ** 2  # upper MP bulk edge
+        z_MP = (lam_emp - lam_plus) / tf.sqrt(q_eff_safe)  # (B, N, 1)
+
+        # Build input sequence to the GRU  — shape (B, N, 5) — S3 feature set
         input_seq = tf.concat(
             [
-                lam_emp,
-                pos,
-                N_vec / T_vec,
-                Tminmean,
-                Tmaxmean,
-                q_eff,
+                lam_emp,  # 0
+                pos,      # 1
+                q_eff,    # 2
+                ipr,      # 3
+                z_MP,     # 4
             ],
             axis=-1,
         )
 
         yield input_seq, Q_emp, Sigma_true, T, Sigma_hat_diag, R_hat
+
+
+def tf_data_generator_nomiss_oos(
+    batch_size,
+    N_fixed,
+    q_fixed,
+    T_oos=50,
+    df_min_factor=1.5,
+    df_max_factor=3,
+):
+    """
+    Fixed-(N, q) no-missingness generator with separate OOS returns.
+
+    q_fixed determines T = N / q_fixed (in-sample length).
+    T_oos OOS returns are drawn from the same Sigma_true for the variance loss.
+
+    Yields:
+        input_seq       (B, N, 5)        same 5-feature format as tf_data_generator
+        Q_emp           (B, N, N)        empirical eigenvectors (from in-sample corr)
+        Sigma_true      (B, N, N)        true covariance (float64)
+        T               int              in-sample length
+        Sigma_hat_diag  (B, N)           diagonal of empirical covariance
+        R_in            (B, N, T)        in-sample returns (float32)
+        R_oos           (B, N, T_oos)    OOS returns (float32)
+    """
+    while True:
+        N = N_fixed
+        T = int(N / q_fixed)
+
+        df_val = np.random.randint(int(df_min_factor * (N + 2)), int(df_max_factor * N))
+        Z_iw = np.random.randn(batch_size, df_val, N)
+        ZtZ = Z_iw.transpose(0, 2, 1) @ Z_iw
+        I_batch = np.eye(N)[None].repeat(batch_size, axis=0)
+        Sigma_true = np.linalg.solve(ZtZ, I_batch) * (df_val - N - 1)
+        Sigma_true_tf = tf.convert_to_tensor(Sigma_true, dtype=tf.float64)
+
+        L = tf.linalg.cholesky(Sigma_true_tf)  # (B, N, N)
+
+        # In-sample returns (fully observed)
+        Z_in = tf.random.normal((batch_size, T, N), dtype=tf.float64)
+        R_in = tf.matmul(L, tf.transpose(Z_in, perm=[0, 2, 1]))  # (B, N, T)
+
+        # OOS returns from same Sigma_true
+        Z_oos = tf.random.normal((batch_size, T_oos, N), dtype=tf.float64)
+        R_oos = tf.cast(
+            tf.matmul(L, tf.transpose(Z_oos, perm=[0, 2, 1])), tf.float32
+        )  # (B, N, T_oos)
+
+        # Empirical covariance → correlation
+        Sigma_hat = tf_cov_pairwise(R_in)  # (B, N, N)
+        Sigma_hat_diag = tf.linalg.diag_part(Sigma_hat)
+        std_pred = tf.sqrt(Sigma_hat_diag)
+        corr_hat = Sigma_hat / (std_pred[:, None, :] * std_pred[:, :, None])
+        corr_hat = 0.5 * (corr_hat + tf.transpose(corr_hat, perm=[0, 2, 1]))
+
+        eigvals, eigvecs = tf.linalg.eigh(corr_hat)
+        eigvals = tf.cast(eigvals, tf.float32)
+        eigvecs = tf.cast(eigvecs, tf.float32)
+
+        lam_emp = tf.expand_dims(eigvals, axis=-1)  # (B, N, 1)
+        Q_emp = eigvecs  # (B, N, N)
+
+        # Features — no missingness → q_eff = q_fixed for all eigenmodes
+        pos = tf.tile(
+            tf.reshape(tf.linspace(0.0, 1.0, N), (1, N, 1)), [batch_size, 1, 1]
+        )  # (B, N, 1)
+        Q_sq = tf.square(tf.transpose(Q_emp, perm=[0, 2, 1]))  # (B, N, N)
+
+        q_eff = tf.fill((batch_size, N, 1), tf.cast(q_fixed, tf.float32))  # (B, N, 1)
+
+        ipr = tf.cast(N, tf.float32) * tf.reduce_sum(tf.square(Q_sq), axis=2)
+        ipr = tf.expand_dims(ipr, axis=-1)  # (B, N, 1)
+
+        q_eff_safe = tf.maximum(q_eff, 1e-6)
+        lam_plus = (1.0 + tf.sqrt(q_eff_safe)) ** 2
+        z_MP = (lam_emp - lam_plus) / tf.sqrt(q_eff_safe)  # (B, N, 1)
+
+        input_seq = tf.concat([lam_emp, pos, q_eff, ipr, z_MP], axis=-1)  # (B, N, 5)
+
+        yield input_seq, Q_emp, Sigma_true_tf, T, Sigma_hat_diag, tf.cast(R_in, tf.float32), R_oos

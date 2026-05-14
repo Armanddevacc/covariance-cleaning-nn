@@ -141,6 +141,7 @@ def real_data_producer(
     rng: np.random.Generator = None,
     dtype: tf.DType = tf.float32,
     no_miss: bool = False,
+    q_range: Tuple[float, float] = None,
 ):
     """
     Generates a TensorFlow dataset that produces batches of real stock data for training models.
@@ -180,6 +181,8 @@ def real_data_producer(
         raise ValueError("Both n_days_in and n_days_in_range cannot be None")
     if n_days_in is not None and n_days_in_range is not None:
         raise ValueError("Only one of n_days_in or n_days_in_range should be provided")
+    if q_range is not None and n_days_in_range is None:
+        raise ValueError("n_days_in_range must be set when q_range is used (it bounds the lookback buffer).")
 
     if sequential and n_days_out > 1:
         raise ValueError(
@@ -254,12 +257,32 @@ def real_data_producer(
                     (batch_size, n_stocks_local), dtype=available_stocks.dtype
                 )
                 for i, t in enumerate(selected_timesteps):
+                    candidates = available_stocks[t]
+                    # Require stock to appear ≥2 days before anchor so bad_next
+                    # doesn't eliminate all its observations (a stock listed 1 day
+                    # before the anchor has its only valid return marked bad by
+                    # bad_next because the preceding day was NaN).
+                    if t >= 2:
+                        earlier = set(available_stocks[t - 2].tolist())
+                        mask = np.array([c in earlier for c in candidates])
+                        if mask.sum() >= n_stocks_local:
+                            candidates = candidates[mask]
                     selected_stocks[i] = rng.choice(
-                        available_stocks[t], n_stocks_local, replace=False
+                        candidates, n_stocks_local, replace=False
                     )
 
-            # Adjust time offsets if n_days_range is specified
-            if n_days_in_range is not None:
+            # Adjust time offsets
+            if q_range is not None:
+                # Compute achievable q range for this N given T bounds, then
+                # sample uniformly within it — avoids T-clipping distortion.
+                q_lo = max(q_range[0], n_stocks_local / n_days_in_range[1])
+                q_hi = min(q_range[1], n_stocks_local / n_days_in_range[0])
+                q_local = rng.uniform(q_lo, q_hi)
+                n_days_in_local = round(n_stocks_local / q_local)
+                input_offsets = np.arange(
+                    -n_days_in_local + 1, 1, dtype=np.int64
+                ).reshape(1, 1, -1)
+            elif n_days_in_range is not None:
                 n_days_in_local = rng.integers(
                     n_days_in_range[0], n_days_in_range[1] + 1
                 )
@@ -278,8 +301,7 @@ def real_data_producer(
 
             # Returns In-sample
             returns_in_raw = historicalData[time_indices_in, selected_stocks[..., None]]
-            bad = np.isnan(returns_in_raw)  # emcompasses the nan value
-            # let's add the inf now
+            bad = ~np.isfinite(returns_in_raw)  # catches NaN and ±Inf
             bad_next = np.zeros_like(bad)
             bad_next[..., 1:] = bad[..., :-1]
             bad = bad | bad_next
@@ -289,8 +311,7 @@ def real_data_producer(
             returns_out_raw = historicalData[
                 time_indices_out, selected_stocks[..., None]
             ]
-            bad_out = np.isnan(returns_out_raw)  # emcompasses the nan value
-            # let's add the inf now
+            bad_out = ~np.isfinite(returns_out_raw)  # catches NaN and ±Inf
             bad_out_next = np.zeros_like(bad_out)
             bad_out_next[..., 1:] = bad_out[..., :-1]
             bad_out = bad_out | bad_out_next
@@ -304,7 +325,9 @@ def real_data_producer(
             std_obs = np.sqrt(sq.sum(axis=-1, keepdims=True) / np.maximum(cnt - 1, 1)).clip(min=1e-8)
             z = np.where(obs_mask, (returns_in - mean_obs) / std_obs, 0.0)
 
-            yield (z, bad), returns_out
+            # yield OOS with NaN at missing positions so tf_cov_pairwise can mask them
+            rout_nan = np.where(bad_out, np.nan, returns_out_raw).astype(np.float32)
+            yield (z, bad), rout_nan
 
     if return_generator:
         return data_generator(no_miss)
@@ -346,6 +369,7 @@ def real_data_pipeline(
     dtype: tf.DType = tf.float32,
     filename: str = DATA,
     no_miss: bool = False,
+    q_range: Tuple[float, float] = None,
 ):
     """
     High-level wrapper that prepares data and returns a producer (or tf.data.Dataset) for real stock returns.
@@ -426,5 +450,6 @@ def real_data_pipeline(
         rng=rng,
         dtype=dtype,
         no_miss=no_miss,
+        q_range=q_range,
     )
     return producer
