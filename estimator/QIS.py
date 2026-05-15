@@ -35,9 +35,7 @@ def QIS(Sample, ddof=1):
 
     # Eigenvalue decomposition (use eigh for Hermitian matrix)
     lambda1, u = np.linalg.eigh(sample)
-    lambda1 = np.clip(
-        lambda1.real, a_min=0, a_max=None
-    )  # Clip negative eigenvalues to 0
+    lambda1 = np.maximum(lambda1.real, 1e-12)
 
     # Compute Quadratic-Inverse Shrinkage estimator
     h = (min(c**2, 1 / c**2) ** 0.35) / p**0.35  # Smoothing parameter
@@ -100,7 +98,7 @@ def QIS_batched_numpy(Sample, ddof=1):
 
     # Eigen decomposition (batched)
     lambda1, u = np.linalg.eigh(sample)
-    lambda1 = np.clip(lambda1.real, 0, None)
+    lambda1 = np.maximum(lambda1.real, 1e-12)
 
     # Smoothing parameter
     h = (min(c**2, 1 / c**2) ** 0.35) / p**0.35
