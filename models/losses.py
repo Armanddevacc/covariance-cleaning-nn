@@ -1,28 +1,3 @@
-# import torch
-# import numpy as np
-# from utils.utils import reconstruct
-#
-#
-# # Potters–Bouchaud loss
-# def loss_function_mat(Mat_ref, Mat_pred, T):
-#     B, N, _ = Mat_ref.shape
-#
-#     # Matrix difference
-#     Delta = Mat_pred - Mat_ref  # (B, N, N)
-#
-#     ## CB: It seems more efficient to compute the Frobenius norm via squaring element-wise and summing.
-#     # Square of the matrix (Delta^2 = Delta @ Delta) Symetric matrix so we don't need to transpose !
-#     Delta2 = torch.transpose(Delta, 1, 2) @ Delta  # (B, N, N)
-#
-#     # Trace of Delta2 = sum of diagonal
-#     trace_vals = Delta2.diagonal(dim1=1, dim2=2).sum(dim=1)  # (B,)
-#
-#     # Normalized Frobenius estimation error (Potters-Bouchaud)
-#     loss_cov = torch.sqrt(trace_vals / N)  # (B,)
-#
-#     return loss_cov.mean()  # scalar
-
-
 import tensorflow as tf
 
 
@@ -35,8 +10,10 @@ def tf_variance_loss(lam_pred, Q_emp, R_oos):
     Q_emp:    (B, N, N) empirical eigenvectors
     R_oos:    (B, N, T_oos) raw OOS returns (zeros at missing positions)
     """
+    # Clamp eigenvalues to ensure PSD before solving for portfolio weights
+    lam_safe = tf.maximum(lam_pred, 1e-4)
     Corr_pred = tf.matmul(
-        tf.matmul(Q_emp, tf.linalg.diag(lam_pred)), Q_emp, transpose_b=True
+        tf.matmul(Q_emp, tf.linalg.diag(lam_safe)), Q_emp, transpose_b=True
     )  # (B, N, N)
 
     B = tf.shape(lam_pred)[0]
@@ -47,12 +24,13 @@ def tf_variance_loss(lam_pred, Q_emp, R_oos):
     x = tf.linalg.solve(Corr_pred, ones)             # (B, N, 1)
     w = x / tf.reduce_sum(x, axis=1, keepdims=True)  # (B, N, 1), sums to 1
 
-    # Realized portfolio variance: (1/T_oos) * ||R_oos^T w||^2
+    # Realized second moment: (1/T_oos) * sum_t (w^T r_t)^2
+    # Using E[r^2] rather than Var(r) = E[r^2] - E[r]^2 for stability at small T_oos
     R_oos = tf.cast(R_oos, tf.float32)               # (B, N, T_oos)
     port_ret = tf.matmul(tf.transpose(R_oos, [0, 2, 1]), w)  # (B, T_oos, 1)
     variance = tf.reduce_mean(tf.square(port_ret), axis=1)    # (B, 1)
 
-    return tf.reduce_mean(variance)
+    return tf.cast(N, tf.float32) * tf.reduce_mean(variance)
 
 
 # Potters–Bouchaud loss
@@ -81,75 +59,3 @@ def tf_loss_function_mat(Mat_ref, Mat_pred, T):
     loss_cov = tf.sqrt(trace_vals) / (N)  # (B,)
 
     return tf.reduce_mean(loss_cov)  # scalar
-
-
-# def log_spectrum_mse(Mat_oos, Mat_pred, T):
-#     """
-#     lam_pred:   (B, N) predicted eigenvalues (positive)
-#     lam_target: (B, N) target eigenvalues (positive)
-#     """
-#     eps = 1e-6
-#     lam_pred, _ = torch.linalg.eigh(Mat_oos)
-#     log_pred = torch.log(lam_pred + eps)
-#
-#     lam_target, _ = torch.linalg.eigh(Mat_pred)
-#     log_tgt = torch.log(lam_target + eps)
-#     return ((log_pred - log_tgt) ** 2).mean()
-
-
-# Potters–Bouchaud loss for corr with tensorflow
-def loss_function_corr_tensorflow(Corr_oos, Corr_pred, T):
-    """
-    Corr_true: (B, N, N)
-    Corr_pred: (B, N, N)
-    T: scalar (int or float)
-    """
-    B, N, _ = Corr_oos.shape
-
-    Delta = Corr_pred - Corr_oos  # (B, N, N)
-
-    Delta2 = Delta2 = tf.matmul(Delta, Delta, transpose_a=True)
-
-    trace_vals = tf.linalg.trace(Delta2)  # (B,)
-
-    loss_cov = tf.sqrt(trace_vals) * T / N**2  # (B,)
-
-    return tf.reduce_mean(loss_cov)  # (1)
-
-
-# # Potters–Bouchaud loss (PyTorch)
-# def loss_function(lam_pred, Q, Sigma_oos, T):
-#     B, N = lam_pred.shape
-#
-#     # build Lambda_pred
-#     Lambda_pred = torch.diag_embed(lam_pred)  # (B, N, N)
-#
-#     # Reconstruct covariance(s) for all batch samples
-#     Sigma_pred = Q @ Lambda_pred @ Q.transpose(1, 2)  # (B, N, N)
-#
-#     # Matrix difference
-#     Delta = Sigma_pred - Sigma_oos  # (B, N, N)
-#
-#     ## CB: It seems more efficient to compute the Frobenius norm via squaring element-wise and summing.
-#     # Square of the matrix (Delta^2 = Delta @ Delta) Symetric matrix so we don't need to transpose !
-#     Delta2 = Delta @ Delta  # (B, N, N)
-#
-#     # Trace of Delta2 = sum of diagonal
-#     trace_vals = Delta2.diagonal(dim1=1, dim2=2).sum(dim=1)  # (B,)
-#
-#     # Normalized Frobenius estimation error (Potters-Bouchaud)
-#     loss_cov = trace_vals * T / N**2  # (B,)
-#
-#     return loss_cov.mean()  # scalar
-#
-#
-# # NOT USED For NOW
-# # loss function which is actually : -profit, beacause we want to maximize them
-# def loss_function_portfolio(lam_pred, Q, R_oos, T):
-#     Sigma = reconstruct(Q, lam_pred)
-#     B, N, _ = Sigma.shape
-#     ones = torch.ones(B, N, 1, dtype=Sigma.dtype)
-#     x = torch.linalg.solve(Sigma, ones)
-#     weights = x / x.sum(dim=1, keepdim=True)
-#     p_oos = weights.transpose(1, 2) @ R_oos[:, :, T:]
-#     return -p_oos.mean()
